@@ -46,7 +46,7 @@ class ReportAndUpdatesTest {
     // ── which failures are worth a retry ────────────────────────────────
 
     @Test
-    fun `no answer, a server fault and a throttle retry; a refusal of this message does not`() {
+    fun `no answer, a server fault and a throttle retry — a refusal of this message does not`() {
         assertTrue(Net.Reply(0, "", "timeout").retryable)
         assertTrue(Net.Reply(503, "").retryable)
         assertTrue(Net.Reply(429, "").retryable)
