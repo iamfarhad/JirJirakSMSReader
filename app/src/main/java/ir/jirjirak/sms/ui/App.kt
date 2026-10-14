@@ -11,6 +11,12 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +41,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -60,7 +70,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -110,7 +123,7 @@ fun App(resumed: Int) {
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Header()
         if (store.endpoint == null) {
@@ -134,34 +147,47 @@ fun App(resumed: Int) {
 
 @Composable
 private fun Header() {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
         Box(
             Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Brand.Green),
+                .size(56.dp)
+                .shadow(10.dp, RoundedCornerShape(18.dp), spotColor = Brand.Green.copy(alpha = 0.5f))
+                .clip(RoundedCornerShape(18.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF22C55E), Brand.Green, Brand.GreenDark))),
             contentAlignment = Alignment.Center,
         ) {
-            Image(painterResource(R.drawable.ic_cricket), contentDescription = null, modifier = Modifier.size(52.dp))
+            Image(painterResource(R.drawable.ic_cricket), contentDescription = null, modifier = Modifier.size(56.dp))
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column {
-            Text("جیرجیرک پیامک", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Brand.Ink)
+            Text("جیرجیرک پیامک", fontWeight = FontWeight.Bold, fontSize = 21.sp, color = Brand.Ink)
             Text("تأیید خودکار رسید کارت‌به‌کارت", color = Brand.Muted, fontSize = 13.sp)
         }
     }
 }
 
+/** A white card on the soft canvas: a coloured icon chip and a title, then its content. */
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
+private fun Section(title: String, icon: ImageVector, tint: Color = Brand.Green, content: @Composable () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(6.dp, MaterialTheme.shapes.large, ambientColor = Color(0x14000000), spotColor = Color(0x1A16A34A)),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Brand.Ink)
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(tint.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Brand.Ink)
+            }
             content()
         }
     }
@@ -201,7 +227,7 @@ private fun PairCard(store: Store, refresh: () -> Unit) {
         }
     }
 
-    Section("اتصال به فروشگاه") {
+    Section("اتصال به فروشگاه", Icons.Filled.Lock) {
         Steps(
             "در ربات فروشگاه بروید به: مدیریت ربات ← پرداخت‌ها ← تأیید خودکار رسید",
             "دکمهٔ «📋 کپی کد اتصال» را بزنید",
@@ -210,8 +236,9 @@ private fun PairCard(store: Store, refresh: () -> Unit) {
         Button(
             onClick = { pair(clipboard.getText()?.text) },
             enabled = !busy,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().height(54.dp),
             shape = MaterialTheme.shapes.medium,
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
         ) {
             Text(if (busy) "در حال اتصال…" else "📋 چسباندن کد اتصال", fontSize = 16.sp)
         }
@@ -265,17 +292,31 @@ private fun StatusCard(store: Store) {
     val ready = store.senders.isNotEmpty()
     val online = System.currentTimeMillis() - store.lastPing < 40 * 60 * 1000L
     val (bg, fg, title) = when {
-        !ready -> Triple(Brand.WarnSoft, Brand.Warn, "⏸ هنوز هیچ پیامکی فرستاده نمی‌شود")
-        !online -> Triple(Brand.BadSoft, Brand.Bad, "📵 ارتباط با ربات برقرار نیست")
-        else -> Triple(Brand.GoodSoft, Brand.Good, "✅ فعال است")
+        !ready -> Triple(Brand.WarnSoft, Brand.Warn, "هنوز هیچ پیامکی فرستاده نمی‌شود")
+        !online -> Triple(Brand.BadSoft, Brand.Bad, "ارتباط با ربات برقرار نیست")
+        else -> Triple(Brand.GoodSoft, Brand.Good, "فعال است")
     }
+    // A dot that breathes while things are well — the one moving thing on the screen, so «it is
+    // working» is seen, not read.
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        initialValue = 0.35f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "dot",
+    )
     Card(
         colors = CardDefaults.cardColors(containerColor = bg),
         shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, fg.copy(alpha = 0.18f)),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, color = fg, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(14.dp).clip(CircleShape)
+                        .background(fg.copy(alpha = if (ready && online) pulse else 1f)),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(title, color = fg, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
             Text("فروشگاه: " + (store.shop ?: "—"), color = Brand.Ink, fontSize = 14.sp)
             Text("آخرین ارتباط با ربات: " + Persian.ago(store.lastPing), color = Brand.Muted, fontSize = 13.sp)
             Text("آخرین پیامک فرستاده‌شده: " + Persian.ago(store.lastSent), color = Brand.Muted, fontSize = 13.sp)
@@ -307,7 +348,7 @@ private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
     }
     var autostartOpened by remember { mutableStateOf(false) }
 
-    Section("آماده‌سازی گوشی") {
+    Section("آماده‌سازی گوشی", Icons.Filled.Settings) {
         CheckRow(
             done = smsGranted,
             title = "اجازهٔ دریافت پیامک",
@@ -385,7 +426,7 @@ private fun SendersCard(store: Store, refresh: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<String?>(null) }
 
-    Section("شماره‌های مجاز بانک") {
+    Section("شماره‌های مجاز بانک", Icons.Filled.Phone) {
         Text(
             "فقط پیامک این شماره‌ها به ربات فرستاده می‌شود. پیامک رمز یکبار مصرف و کد تأیید حتی از این شماره‌ها هم فرستاده نمی‌شود.",
             color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp,
@@ -479,7 +520,7 @@ private fun AddSenderDialog(onDone: (String?) -> Unit) {
 @Composable
 private fun LogCard(store: Store) {
     val log = store.log()
-    Section("پیامک‌های فرستاده‌شده") {
+    Section("پیامک‌های فرستاده‌شده", Icons.Filled.Email) {
         if (log.isEmpty()) {
             Text("هنوز پیامکی فرستاده نشده است. با اولین واریز به حساب، اینجا نشان داده می‌شود.", color = Brand.Muted, fontSize = 13.sp)
         }

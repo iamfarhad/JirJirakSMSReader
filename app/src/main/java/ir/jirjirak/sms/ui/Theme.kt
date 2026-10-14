@@ -2,6 +2,7 @@ package ir.jirjirak.sms.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -9,7 +10,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import ir.jirjirak.sms.R
 
 /** Jirjirak's own palette: a cricket's green on a light, calm surface. */
 object Brand {
@@ -27,6 +33,13 @@ object Brand {
     val BadSoft = Color(0xFFFDE8E8)
 }
 
+val Vazirmatn = FontFamily(
+    Font(R.font.vazirmatn_regular, FontWeight.Normal),
+    Font(R.font.vazirmatn_medium, FontWeight.Medium),
+    Font(R.font.vazirmatn_medium, FontWeight.SemiBold),
+    Font(R.font.vazirmatn_bold, FontWeight.Bold),
+)
+
 @Composable
 fun JirjirakTheme(content: @Composable () -> Unit) {
     MaterialTheme(
@@ -43,12 +56,16 @@ fun JirjirakTheme(content: @Composable () -> Unit) {
             error = Brand.Bad,
         ),
         shapes = Shapes(
-            small = RoundedCornerShape(12.dp),
-            medium = RoundedCornerShape(16.dp),
-            large = RoundedCornerShape(22.dp),
+            small = RoundedCornerShape(14.dp),
+            medium = RoundedCornerShape(18.dp),
+            large = RoundedCornerShape(24.dp),
         ),
     ) {
-        // The whole app is Persian: right to left whatever the phone's language is.
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, content = content)
+        // The whole app is Persian: right to left whatever the phone's language is, in Vazirmatn —
+        // the system font draws Persian too, but stiffly, and it is the first thing that reads as
+        // «not designed».
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            ProvideTextStyle(TextStyle(fontFamily = Vazirmatn, color = Brand.Ink), content = content)
+        }
     }
 }
