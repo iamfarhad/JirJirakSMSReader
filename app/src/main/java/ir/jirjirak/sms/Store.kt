@@ -84,6 +84,11 @@ class Store(context: Context) {
         get() = prefs.getLong("last_sent", 0)
         set(v) = prefs.edit().putLong("last_sent", v).apply()
 
+    /** The seller said they switched on the vendor's «Autostart» — the phone has no way to tell us. */
+    var autostartConfirmed: Boolean
+        get() = prefs.getBoolean("autostart_confirmed", false)
+        set(v) = prefs.edit().putBoolean("autostart_confirmed", v).apply()
+
     // ── updates ─────────────────────────────────────────────────────────
 
     var lastUpdateCheck: Long

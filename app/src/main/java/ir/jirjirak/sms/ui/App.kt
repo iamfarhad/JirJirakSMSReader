@@ -116,8 +116,11 @@ fun App(resumed: Int) {
         }
     }
     val refresh: () -> Unit = { tick++ }
-    // Read so a change to either re-composes.
-    @Suppress("UNUSED_VARIABLE") val unused = resumed + tick
+    // Handed to every card. The cards read the Store, which Compose cannot observe, and their other
+    // arguments (the same Store, the same lambda) never change — so with strong skipping each card
+    // was SKIPPED on every recomposition: «مجاز کن» saved the number and the list did not show it,
+    // a permission granted in Settings still read ⚠️, until the app was closed and opened again.
+    val rev = resumed * 1_000_000 + tick
 
     Column(
         Modifier
@@ -141,13 +144,13 @@ fun App(resumed: Int) {
         if (store.endpoint == null) {
             PairCard(store, refresh)
         } else {
-            StatusCard(store)
-            ChecklistCard(context, store, refresh)
-            SendersCard(store, refresh)
-            LogCard(store)
+            StatusCard(store, rev)
+            ChecklistCard(context, store, refresh, rev)
+            SendersCard(store, refresh, rev)
+            LogCard(store, rev)
             UnpairButton(context, store, refresh)
         }
-        UpdateCheckRow(store, refresh)
+        UpdateCheckRow(store, refresh, rev)
         Text(
             "نسخهٔ " + Persian.digits(BuildConfig.VERSION_NAME),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -228,7 +231,8 @@ private fun UpdateCard(version: String, onDownload: () -> Unit) {
 }
 
 @Composable
-private fun UpdateCheckRow(store: Store, refresh: () -> Unit) {
+@Suppress("UNUSED_PARAMETER")
+private fun UpdateCheckRow(store: Store, refresh: () -> Unit, rev: Int) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
@@ -355,7 +359,8 @@ private fun Notice(text: String, background: Color, color: Color) {
 // ── 2. status ───────────────────────────────────────────────────────────
 
 @Composable
-private fun StatusCard(store: Store) {
+@Suppress("UNUSED_PARAMETER")
+private fun StatusCard(store: Store, rev: Int) {
     val ready = store.senders.isNotEmpty()
     val online = System.currentTimeMillis() - store.lastPing < 40 * 60 * 1000L
     val revoked = store.lastError == "revoked"
@@ -409,7 +414,7 @@ private fun StatusCard(store: Store) {
 
 @SuppressLint("BatteryLife")
 @Composable
-private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
+private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit, rev: Int) {
     val smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
     val power = context.getSystemService(PowerManager::class.java)
     val batteryFree = power?.isIgnoringBatteryOptimizations(context.packageName) ?: true
@@ -423,7 +428,17 @@ private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
         KeepAliveService.start(context)
         refresh()
     }
-    var autostartOpened by remember { mutableStateOf(false) }
+    // Autostart has no API to read back: nothing on the phone says whether the seller switched it on.
+    // Opening the page used to tick the row green — a claim the app could not make, and gone again on
+    // the next launch. Now the seller is asked on the way back, and the answer is remembered.
+    var autostartAsking by remember { mutableStateOf(false) }
+    var autostartOpenedAt by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(rev) {
+        if (autostartOpenedAt >= 0 && rev / 1_000_000 > autostartOpenedAt) {
+            autostartOpenedAt = -1
+            autostartAsking = true
+        }
+    }
 
     Section("آماده‌سازی گوشی", Icons.Filled.Settings) {
         CheckRow(
@@ -467,11 +482,29 @@ private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
         if (Autostart.needed) {
             HorizontalDivider(color = Brand.Canvas)
             CheckRow(
-                done = autostartOpened,
+                done = store.autostartConfirmed,
                 title = "اجرای خودکار (" + Build.MANUFACTURER + ")",
-                hint = "در این گوشی‌ها «اجرای خودکار» یا «Autostart» برای برنامه‌های تازه خاموش است. در صفحه‌ای که باز می‌شود، آن را برای «جیرجیرک پیامک» روشن کنید.",
+                hint = if (store.autostartConfirmed) {
+                    "گفتید روشنش کرده‌اید. اگر برنامه بعد از خاموش و روشن کردن گوشی کار نکرد، دوباره بررسی کنید."
+                } else {
+                    "در این گوشی‌ها «اجرای خودکار» یا «Autostart» برای برنامه‌های تازه خاموش است. در صفحه‌ای که باز می‌شود، آن را برای «جیرجیرک پیامک» روشن کنید."
+                },
                 action = "باز کن",
-            ) { Autostart.open(context); autostartOpened = true }
+            ) {
+                autostartOpenedAt = rev / 1_000_000
+                Autostart.open(context)
+            }
+        }
+        if (autostartAsking) {
+            AlertDialog(
+                onDismissRequest = { autostartAsking = false },
+                title = { Text("اجرای خودکار") },
+                text = { Text("«اجرای خودکار» را برای «جیرجیرک پیامک» روشن کردید؟", lineHeight = 22.sp) },
+                confirmButton = {
+                    TextButton(onClick = { store.autostartConfirmed = true; autostartAsking = false; refresh() }) { Text("بله، روشن شد") }
+                },
+                dismissButton = { TextButton(onClick = { autostartAsking = false }) { Text("نه هنوز") } },
+            )
         }
         HorizontalDivider(color = Brand.Canvas)
         CheckRow(
@@ -511,7 +544,8 @@ private fun CheckRow(done: Boolean, title: String, hint: String, action: String?
 // ── 4. the seller's own list of bank numbers ────────────────────────────
 
 @Composable
-private fun SendersCard(store: Store, refresh: () -> Unit) {
+@Suppress("UNUSED_PARAMETER")
+private fun SendersCard(store: Store, refresh: () -> Unit, rev: Int) {
     var adding by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<String?>(null) }
@@ -673,7 +707,8 @@ private fun AddSenderDialog(onDone: (String?) -> Unit) {
 // ── 5. what was sent ────────────────────────────────────────────────────
 
 @Composable
-private fun LogCard(store: Store) {
+@Suppress("UNUSED_PARAMETER")
+private fun LogCard(store: Store, rev: Int) {
     val log = store.log()
     Section("پیامک‌های فرستاده‌شده", Icons.Filled.Email) {
         if (log.isEmpty()) {
