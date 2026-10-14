@@ -47,11 +47,12 @@ class Store(context: Context) {
 
     var senders: List<String>
         get() = strings("senders")
-        set(v) = putStrings("senders", v.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { Rules.normalize(it) })
+        set(v) = putStrings("senders", v.map { it.trim() }.filter { Rules.normalize(it).isNotEmpty() }
+            .fold(listOf<String>()) { kept, s -> if (Rules.isAllowed(s, kept)) kept else kept + s })
 
     fun addSender(s: String) {
         senders = senders + s
-        suggestions = suggestions.filter { Rules.normalize(it) != Rules.normalize(s) }
+        suggestions = suggestions.filter { !Rules.isAllowed(it, listOf(s)) }
     }
 
     fun removeSender(s: String) {
@@ -64,7 +65,7 @@ class Store(context: Context) {
         set(v) = putStrings("suggestions", v.distinctBy { Rules.normalize(it) }.takeLast(10))
 
     fun suggest(sender: String) {
-        if (!Rules.isAllowed(sender, senders) && suggestions.none { Rules.normalize(it) == Rules.normalize(sender) }) {
+        if (!Rules.isAllowed(sender, senders) && !Rules.isAllowed(sender, suggestions)) {
             suggestions = suggestions + sender
         }
     }

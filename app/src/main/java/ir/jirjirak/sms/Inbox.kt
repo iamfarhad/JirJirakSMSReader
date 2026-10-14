@@ -23,7 +23,7 @@ object Inbox {
     fun group(messages: List<Sms>, alreadyAllowed: Collection<String>): List<Sender> =
         messages
             .filter { Rules.normalize(it.from).isNotEmpty() && !Rules.isAllowed(it.from, alreadyAllowed) }
-            .groupBy { Rules.normalize(it.from) }
+            .groupBy { Rules.variants(it.from).minOrNull() ?: "" }
             .map { (_, list) ->
                 val latest = list.maxBy { it.at }
                 val bankish = list.any { Rules.looksLikeBank(it.body) && !Rules.isSecret(it.body) }

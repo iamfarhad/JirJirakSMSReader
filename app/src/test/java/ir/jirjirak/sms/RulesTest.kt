@@ -57,7 +57,13 @@ class RulesTest {
     @Test
     fun `a country code written either way is one sender`() {
         assertEquals(Rules.normalize("+989999"), Rules.normalize("00989999"))
-        assertEquals("98200", Rules.normalize("98200"), "a short code that merely starts with 98 is left alone")
+        // Seen on a phone: the seller saved «+98200», the inbox shows «98200».
+        assertTrue(Rules.isAllowed("98200", listOf("+98200")))
+        assertTrue(Rules.isAllowed("+98200", listOf("98200")))
+        assertTrue(Rules.isAllowed("0200", listOf("+98200")))
+        assertTrue(Rules.isAllowed("09121234567", listOf("+989121234567")))
+        assertFalse("a different short code stays different", Rules.isAllowed("98201", listOf("+98200")))
+        assertFalse(Rules.isAllowed("9999", listOf("99990")))
     }
 
     @Test

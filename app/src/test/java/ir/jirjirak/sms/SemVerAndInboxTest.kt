@@ -62,6 +62,8 @@ class SemVerAndInboxTest {
         )
 
         assertEquals(listOf("98200"), rows.map { it.from })
+        assertEquals("allowed as «+98200», the inbox's «98200» is the same sender", emptyList<String>(),
+            Inbox.group(listOf(sms("98200", "واریز", 1)), alreadyAllowed = listOf("+98200")).map { it.from })
         assertNull("a one-time password is never shown", rows.single().preview)
         assertFalse("an OTP alone does not make a sender look like a bank", rows.single().bankish)
     }

@@ -63,9 +63,24 @@ object Rules {
         return s.removePrefix("+").lowercase()
     }
 
-    fun isAllowed(sender: String, allowed: Collection<String>): Boolean {
+    /**
+     * Every way this sender may be written: the phone shows «98200» where the seller saved «+98200»,
+     * and a country code may or may not be part of what a short code looks like. Two senders are the
+     * same when any of their spellings meet.
+     */
+    fun variants(sender: String): Set<String> {
         val n = normalize(sender)
-        return n.isNotEmpty() && allowed.any { normalize(it) == n }
+        if (n.isEmpty()) return emptySet()
+        if (!n.all { it in '0'..'9' }) return setOf(n)
+        val out = mutableSetOf(n)
+        if (n.startsWith("0") && n.length > 1) out += "98" + n.drop(1)
+        if (n.startsWith("98") && n.length >= 5) out += "0" + n.drop(2)
+        return out
+    }
+
+    fun isAllowed(sender: String, allowed: Collection<String>): Boolean {
+        val mine = variants(sender)
+        return mine.isNotEmpty() && allowed.any { other -> variants(other).any { it in mine } }
     }
 
     /** Phrases of a one-time password or a login/verification code. Matched on canon() text. */
