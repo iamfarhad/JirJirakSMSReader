@@ -1,0 +1,13 @@
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+# The release key is a secret: an APK signed with it can be installed OVER a seller's copy of this
+# app — an app that reads bank SMS. It lives in GitHub Secrets (KEYSTORE_BASE64), never here.
+*.jks
+*.keystore
+keystore.properties
+output-apks/

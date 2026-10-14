@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- جیرجیرک: a cricket mid-jump — head, body, wing line, long antennae and the big hind leg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- antennae -->
+    <path android:pathData="M36,46 C30,30 24,24 14,22" android:strokeColor="#FFFFFF" android:strokeWidth="2.6" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M39,44 C38,28 34,20 26,14" android:strokeColor="#FFFFFF" android:strokeWidth="2.6" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <!-- body -->
+    <path android:pathData="M44,52 C52,42 74,42 84,50 C90,55 88,63 80,65 C68,68 52,66 45,61 C41,58 41,55 44,52 Z" android:fillColor="#FFFFFF" />
+    <!-- head -->
+    <path android:pathData="M33,54 a10,9 0 1,0 20,0 a10,9 0 1,0 -20,0 Z" android:fillColor="#FFFFFF" />
+    <!-- eye -->
+    <path android:pathData="M38,52 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 Z" android:fillColor="#6D5EFC" />
+    <!-- wing line -->
+    <path android:pathData="M54,52 C62,49 72,49 80,53" android:strokeColor="#6D5EFC" android:strokeWidth="2" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <!-- big hind leg: thigh up, shin down -->
+    <path android:pathData="M70,60 L84,38 L94,72" android:strokeColor="#FFFFFF" android:strokeWidth="4.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <!-- front legs -->
+    <path android:pathData="M50,63 L46,76" android:strokeColor="#FFFFFF" android:strokeWidth="2.6" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M58,64 L58,78" android:strokeColor="#FFFFFF" android:strokeWidth="2.6" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>
