@@ -65,7 +65,8 @@ fun JirjirakTheme(content: @Composable () -> Unit) {
         // the system font draws Persian too, but stiffly, and it is the first thing that reads as
         // «not designed».
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            ProvideTextStyle(TextStyle(fontFamily = Vazirmatn, color = Brand.Ink), content = content)
+            // The font only: a colour here would override every button's own (white on green).
+            ProvideTextStyle(TextStyle(fontFamily = Vazirmatn), content = content)
         }
     }
 }
