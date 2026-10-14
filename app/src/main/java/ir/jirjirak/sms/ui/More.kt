@@ -59,6 +59,7 @@ fun MoreTab(store: Store, now: Long) {
 
 @Composable
 private fun UpdateCard(store: Store, now: Long) {
+    watchStore()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val latest = Updates.available(context)
@@ -161,13 +162,14 @@ private fun UpdateCard(store: Store, now: Long) {
 
 @Composable
 private fun ConnectionCard(store: Store) {
+    watchStore()
     val context = LocalContext.current
     var asking by remember { mutableStateOf(false) }
     Section("این اتصال", Icons.Filled.Info, Brand.Muted) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             InfoLine("فروشگاه", store.shop ?: "—")
-            InfoLine("سرور ربات", store.server?.let { Persian.sender(it) } ?: "—")
-            InfoLine("گوشی", Persian.sender(Build.MANUFACTURER + " " + Build.MODEL + " · Android " + Build.VERSION.RELEASE))
+            InfoLine("سرور ربات", store.server?.let { Persian.latin(it) } ?: "—")
+            InfoLine("گوشی", Persian.latin(Build.MANUFACTURER + " " + Build.MODEL + " · Android " + Build.VERSION.RELEASE))
             InfoLine("شماره‌های مجاز", store.senders.takeIf { it.isNotEmpty() }?.joinToString("، ") { Persian.sender(it) } ?: "هیچ")
         }
         HorizontalDivider(color = Brand.Line)

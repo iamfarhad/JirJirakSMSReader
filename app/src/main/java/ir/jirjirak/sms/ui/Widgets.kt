@@ -47,8 +47,11 @@ import ir.jirjirak.sms.Store
 import org.json.JSONObject
 
 /**
- * Read this first in any composable that shows something from the Store: the composable is then
- * redrawn whenever the Store changes — from a button, a receiver or a background job alike.
+ * Read this first in EVERY composable that shows something from the Store — each card, not only
+ * the screen around them: the card is then redrawn whenever the Store changes, from a button, a
+ * receiver or a background job alike. A parent's read does not reach a child whose parameters
+ * are unchanged: Compose skips that child, which is how the status card kept saying «هنوز نه»
+ * after a ping had plainly arrived.
  */
 @Composable
 fun watchStore(): Int = Store.revision.intValue

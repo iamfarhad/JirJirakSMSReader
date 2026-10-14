@@ -100,6 +100,7 @@ fun HomeTab(store: Store, now: Long, resumed: Int, onReport: () -> Unit, onMore:
 
 @Composable
 fun PairScreen(store: Store) {
+    watchStore()
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -188,6 +189,7 @@ private fun Steps(vararg steps: String) {
 
 @Composable
 private fun StatusCard(store: Store, now: Long) {
+    watchStore()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val ready = store.senders.isNotEmpty()
@@ -226,7 +228,7 @@ private fun StatusCard(store: Store, now: Long) {
                 Spacer(Modifier.width(10.dp))
                 Text(title, color = fg, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
             }
-            store.server?.let { Text("سرور: " + Persian.sender(it), color = Brand.Muted, fontSize = 12.sp) }
+            store.server?.let { Text("سرور: " + Persian.latin(it), color = Brand.Muted, fontSize = 12.sp) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 StatTile("آخرین ارتباط", Persian.ago(store.lastPing, now), Modifier.weight(1f), if (online) Brand.Ink else Brand.Bad)
                 StatTile("آخرین پیامک", Persian.ago(store.lastSent, now), Modifier.weight(1f))
@@ -277,6 +279,7 @@ private fun StatusCard(store: Store, now: Long) {
 
 @Composable
 private fun SubscriptionCard(store: Store, now: Long, onMore: () -> Unit) {
+    watchStore()
     val info = store.shopInfo
     val sub = info.optJSONObject("subscription") ?: return
     val stats = info.optJSONObject("stats")
@@ -331,6 +334,7 @@ private fun SubscriptionCard(store: Store, now: Long, onMore: () -> Unit) {
 @SuppressLint("BatteryLife")
 @Composable
 private fun ChecklistCard(store: Store, resumed: Int) {
+    watchStore()
     val context = LocalContext.current
     // Re-read on every return to the app: the permission was granted in Settings, the battery
     // exemption in a dialog — none of it writes to the Store.
@@ -477,6 +481,7 @@ private fun openAppSettings(context: android.content.Context) {
 
 @Composable
 private fun SendersCard(store: Store) {
+    watchStore()
     var adding by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<String?>(null) }
@@ -644,6 +649,7 @@ private fun AddSenderDialog(onDone: (String?) -> Unit) {
 
 @Composable
 private fun RecentEvents(store: Store, onReport: () -> Unit) {
+    watchStore()
     val events = store.events()
     var expanded by remember { mutableStateOf<String?>(null) }
     Section("آخرین رویدادها", Icons.AutoMirrored.Filled.List, trailing = {

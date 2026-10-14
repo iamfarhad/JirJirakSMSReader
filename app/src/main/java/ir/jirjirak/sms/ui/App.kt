@@ -148,7 +148,7 @@ private fun Header(shop: String?) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text("جیرجیرک پیامک", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Brand.Ink)
-            Text(shop?.let { "فروشگاه $it" } ?: "تأیید خودکار رسید کارت‌به‌کارت", color = Brand.Muted, fontSize = 13.sp)
+            Text(shop ?: "تأیید خودکار رسید کارت‌به‌کارت", color = Brand.Muted, fontSize = 13.sp)
         }
     }
 }
