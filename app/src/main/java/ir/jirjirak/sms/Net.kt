@@ -1,8 +1,11 @@
 package ir.jirjirak.sms
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -90,6 +93,10 @@ object Net {
             .put("pending", store.queue().size)
             .put("senders", JSONArray(store.senders))
             .put("model", Build.MANUFACTURER + " " + Build.MODEL)
+            // Can this phone actually hear an SMS? Paired and pinging is not the same as receiving:
+            // Android 15 silently refuses the SMS permission to a sideloaded app until «Allow
+            // restricted settings», and the bot should say so instead of looking connected.
+            .put("sms_permission", ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED)
             .put("android", Build.VERSION.SDK_INT)
         (context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.let {
             body.put("battery", it.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY))
