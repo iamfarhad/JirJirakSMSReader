@@ -24,6 +24,8 @@ object Brand {
     val GreenDark = Color(0xFF166534)
     val GreenSoft = Color(0xFFDCFCE7)
     val Canvas = Color(0xFFF2FAF5)
+    /** Dividers and the ring of a step not yet done. */
+    val Line = Color(0xFFE3EDE7)
     val Ink = Color(0xFF14231A)
     val Muted = Color(0xFF5F7166)
     val Good = Color(0xFF1F9D57)

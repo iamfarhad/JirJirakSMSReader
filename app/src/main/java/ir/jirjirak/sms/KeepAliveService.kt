@@ -40,7 +40,10 @@ class KeepAliveService : Service() {
             }
         }.isSuccess
         Beat.schedule(this)
-        if (!ok) stopSelf()
+        if (!ok) {
+            Store(this).event("system", "warn", "اندروید اجازهٔ اجرای پس‌زمینه نداد", "برنامه را یک بار باز کنید و «کار در پس‌زمینه» را در فهرست آماده‌سازی تنظیم کنید.")
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

@@ -8,12 +8,24 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        if (Store(context).endpoint != null) {
+        val store = Store(context)
+        if (store.endpoint != null) {
+            store.event(
+                "system", "info",
+                if (intent.action == Intent.ACTION_BOOT_COMPLETED) "گوشی روشن شد" else "برنامه به‌روز شد: نسخهٔ " + BuildConfig.VERSION_NAME,
+                "ارسال پیامک‌ها دوباره راه افتاد.",
+            )
             Beat.schedule(context)
             SyncJob.schedulePeriodic(context)
             SyncJob.scheduleRetry(context)
             // Starting a foreground service from BOOT_COMPLETED is one of Android's allowed cases.
             KeepAliveService.start(context)
+        }
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            // The APK that was just installed is of no further use.
+            store.downloadedFile?.let { runCatching { java.io.File(it).delete() } }
+            store.downloadedVersion = null
+            store.downloadedFile = null
         }
     }
 }
