@@ -12,6 +12,12 @@ object Persian {
 
     fun number(n: Int): String = digits(n.toString())
 
+    /**
+     * A sender as it is written — «+98200» stays «+98200» inside right-to-left text instead of
+     * becoming «98200+». Isolated left-to-right (U+2066 … U+2069), Persian digits kept.
+     */
+    fun sender(s: String): String = "\u2066" + digits(s) + "\u2069"
+
     fun ago(millis: Long, now: Long = System.currentTimeMillis()): String {
         if (millis <= 0) return "هنوز نه"
         val s = (now - millis) / 1000

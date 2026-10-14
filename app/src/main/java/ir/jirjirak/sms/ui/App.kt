@@ -440,7 +440,7 @@ private fun SendersCard(store: Store, refresh: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(Brand.Canvas).padding(start = 12.dp),
             ) {
-                Text("🏦 " + Persian.digits(s), modifier = Modifier.weight(1f), color = Brand.Ink, fontSize = 15.sp)
+                Text("🏦 " + Persian.sender(s), modifier = Modifier.weight(1f), color = Brand.Ink, fontSize = 15.sp)
                 IconButton(onClick = { removing = s }) {
                     Icon(Icons.Filled.Delete, contentDescription = "حذف", tint = Brand.Bad)
                 }
@@ -463,7 +463,7 @@ private fun SendersCard(store: Store, refresh: () -> Unit) {
             Text("پیشنهاد: این شماره‌ها پیامک بانکی فرستاده‌اند ولی مجاز نیستند", color = Brand.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             suggestions.forEach { s ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text(Persian.digits(s), modifier = Modifier.weight(1f), color = Brand.Ink)
+                    Text(Persian.sender(s), modifier = Modifier.weight(1f), color = Brand.Ink)
                     TextButton(onClick = { store.addSender(s); refresh() }) { Text("مجاز کن") }
                     IconButton(onClick = { store.dismissSuggestion(s); refresh() }) {
                         Icon(Icons.Filled.Close, contentDescription = "نادیده", tint = Brand.Muted)
@@ -484,7 +484,7 @@ private fun SendersCard(store: Store, refresh: () -> Unit) {
         AlertDialog(
             onDismissRequest = { removing = null },
             title = { Text("حذف شماره") },
-            text = { Text("پیامک‌های «" + Persian.digits(s) + "» دیگر به ربات فرستاده نمی‌شود.") },
+            text = { Text("پیامک‌های «" + Persian.sender(s) + "» دیگر به ربات فرستاده نمی‌شود.") },
             confirmButton = {
                 TextButton(onClick = { store.removeSender(s); removing = null; refresh() }) { Text("حذف", color = Brand.Bad) }
             },
@@ -528,7 +528,7 @@ private fun LogCard(store: Store) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (item.optBoolean("ok")) "✅" else "⏳")
                 Spacer(Modifier.width(8.dp))
-                Text(Persian.digits(item.optString("from")), modifier = Modifier.weight(1f), color = Brand.Ink, fontSize = 14.sp)
+                Text(Persian.sender(item.optString("from")), modifier = Modifier.weight(1f), color = Brand.Ink, fontSize = 14.sp)
                 Text(Persian.clock(item.optLong("at")), color = Brand.Muted, fontSize = 13.sp)
             }
         }
