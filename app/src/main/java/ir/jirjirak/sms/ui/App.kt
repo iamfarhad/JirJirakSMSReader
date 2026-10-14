@@ -85,6 +85,10 @@ fun App(resumed: Int, wantedTab: Int) {
     }
 
     val paired = store.endpoint != null
+    // One scroll state for the three tabs, so a new tab starts at its top rather than wherever the
+    // last one was left.
+    val scroll = rememberScrollState()
+    LaunchedEffect(tab) { scroll.scrollTo(0) }
 
     Scaffold(
         containerColor = Brand.Canvas,
@@ -116,7 +120,7 @@ fun App(resumed: Int, wantedTab: Int) {
                 .fillMaxSize()
                 .background(Brand.Canvas)
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
