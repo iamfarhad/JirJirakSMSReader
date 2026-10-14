@@ -4,6 +4,8 @@
     <!-- RECEIVE only: the app hears new SMS as they arrive. It never reads the inbox. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required by JobScheduler for a job that waits for a network; without it, scheduling throws. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- The permanent «فعال است» notification that keeps the app from being put to sleep. -->

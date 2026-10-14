@@ -31,24 +31,26 @@ class SyncJob : JobService() {
 
         fun schedulePeriodic(c: Context) {
             val js = c.getSystemService(JobScheduler::class.java) ?: return
-            js.schedule(
+            // A job that cannot be scheduled must never take the app down with it: the foreground
+            // service beats on its own, this is the second line.
+            runCatching { js.schedule(
                 JobInfo.Builder(PERIODIC, ComponentName(c, SyncJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setPeriodic(15 * 60 * 1000L)
                     .setPersisted(true)
                     .build(),
-            )
+            ) }
         }
 
         fun scheduleRetry(c: Context) {
             val js = c.getSystemService(JobScheduler::class.java) ?: return
-            js.schedule(
+            runCatching { js.schedule(
                 JobInfo.Builder(RETRY, ComponentName(c, SyncJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setMinimumLatency(5_000)
                     .setBackoffCriteria(30_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
                     .build(),
-            )
+            ) }
         }
     }
 }
