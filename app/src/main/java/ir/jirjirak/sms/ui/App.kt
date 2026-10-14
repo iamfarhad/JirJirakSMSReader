@@ -83,13 +83,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import ir.jirjirak.sms.Autostart
+import ir.jirjirak.sms.Beat
 import ir.jirjirak.sms.BuildConfig
 import ir.jirjirak.sms.KeepAliveService
 import ir.jirjirak.sms.Net
 import ir.jirjirak.sms.R
+import ir.jirjirak.sms.Inbox
 import ir.jirjirak.sms.Rules
+import ir.jirjirak.sms.SemVer
 import ir.jirjirak.sms.Store
 import ir.jirjirak.sms.SyncJob
+import ir.jirjirak.sms.Updates
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -126,6 +130,14 @@ fun App(resumed: Int) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Header()
+        LaunchedEffect(Unit) {
+            // On opening, at most every 6 hours: the background beat asks too.
+            if (System.currentTimeMillis() - store.lastUpdateCheck > 6 * 60 * 60 * 1000L) {
+                withContext(Dispatchers.IO) { Updates.check(context.applicationContext) }
+                refresh()
+            }
+        }
+        Updates.available(context)?.let { UpdateCard(it.version) { Updates.open(context, it.url) } }
         if (store.endpoint == null) {
             PairCard(store, refresh)
         } else {
@@ -135,6 +147,7 @@ fun App(resumed: Int) {
             LogCard(store)
             UnpairButton(context, store, refresh)
         }
+        UpdateCheckRow(store, refresh)
         Text(
             "نسخهٔ " + Persian.digits(BuildConfig.VERSION_NAME),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -193,6 +206,54 @@ private fun Section(title: String, icon: ImageVector, tint: Color = Brand.Green,
     }
 }
 
+// ── updates ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun UpdateCard(version: String, onDownload: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Brand.GreenSoft),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, Brand.Green.copy(alpha = 0.25f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("نسخهٔ تازه آمده: " + Persian.digits(version), fontWeight = FontWeight.Bold, color = Brand.GreenDark, fontSize = 15.sp)
+                Text("نسخهٔ فعلی شما " + Persian.digits(BuildConfig.VERSION_NAME.substringBefore('-')) + " است. نصب نسخهٔ تازه تنظیمات شما را پاک نمی‌کند.", color = Brand.Ink, fontSize = 12.sp, lineHeight = 18.sp)
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = onDownload, shape = MaterialTheme.shapes.medium) { Text("دریافت") }
+        }
+    }
+}
+
+@Composable
+private fun UpdateCheckRow(store: Store, refresh: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        TextButton(enabled = !checking, onClick = {
+            checking = true
+            scope.launch {
+                val latest = withContext(Dispatchers.IO) { Updates.check(context.applicationContext) }
+                checking = false
+                result = when {
+                    latest == null -> "بررسی ممکن نشد؛ اینترنت را بررسی کنید."
+                    SemVer.isNewer(latest.version, BuildConfig.VERSION_NAME) -> null   // the card says it
+                    else -> "نسخهٔ شما به‌روز است."
+                }
+                refresh()
+            }
+        }) { Text(if (checking) "در حال بررسی…" else "بررسی به‌روزرسانی") }
+        Text(
+            result ?: ("آخرین بررسی: " + Persian.ago(store.lastUpdateCheck)),
+            color = Brand.Muted, fontSize = 12.sp,
+        )
+    }
+}
+
 // ── 1. pairing ──────────────────────────────────────────────────────────
 
 @Composable
@@ -213,15 +274,21 @@ private fun PairCard(store: Store, refresh: () -> Unit) {
         busy = true
         error = null
         scope.launch {
-            store.endpoint = endpoint
-            val ok = withContext(Dispatchers.IO) { Net.ping(context) }
+            // Ask the CANDIDATE first and save it only on success: saved first, the screen switched
+            // to «paired» mid-request, which cancelled this very coroutine — a failed ping then left
+            // a dead endpoint saved, and a good one never started the service.
+            val result = withContext(Dispatchers.IO) { Net.ping(context.applicationContext, endpoint) }
             busy = false
-            if (ok) {
-                SyncJob.schedulePeriodic(context)
-                KeepAliveService.start(context)
-            } else {
-                store.unpair()
-                error = "به ربات وصل نشد. اینترنت گوشی را بررسی کنید؛ اگر درست است، کد تازه‌ای از ربات کپی کنید."
+            when (result) {
+                Net.Ping.OK -> {
+                    store.endpoint = endpoint
+                    val app = context.applicationContext
+                    SyncJob.schedulePeriodic(app)
+                    Beat.schedule(app)
+                    KeepAliveService.start(app)
+                }
+                Net.Ping.REVOKED -> error = "این کد اتصال دیگر معتبر نیست؛ احتمالاً آدرس در ربات عوض شده. «کپی کد اتصال» تازه را از ربات بزنید."
+                Net.Ping.UNREACHABLE -> error = "به ربات وصل نشد. اینترنت گوشی را بررسی کنید و دوباره امتحان کنید."
             }
             refresh()
         }
@@ -291,7 +358,9 @@ private fun Notice(text: String, background: Color, color: Color) {
 private fun StatusCard(store: Store) {
     val ready = store.senders.isNotEmpty()
     val online = System.currentTimeMillis() - store.lastPing < 40 * 60 * 1000L
+    val revoked = store.lastError == "revoked"
     val (bg, fg, title) = when {
+        revoked -> Triple(Brand.BadSoft, Brand.Bad, "کد اتصال باطل شده")
         !ready -> Triple(Brand.WarnSoft, Brand.Warn, "هنوز هیچ پیامکی فرستاده نمی‌شود")
         !online -> Triple(Brand.BadSoft, Brand.Bad, "ارتباط با ربات برقرار نیست")
         else -> Triple(Brand.GoodSoft, Brand.Good, "فعال است")
@@ -324,7 +393,12 @@ private fun StatusCard(store: Store) {
             if (pending > 0) {
                 Text("⏳ " + Persian.number(pending) + " پیامک منتظر اینترنت", color = Brand.Warn, fontSize = 13.sp)
             }
-            if (!ready) {
+            if (revoked) {
+                Text(
+                    "ربات این گوشی را دیگر نمی‌شناسد (آدرس در ربات عوض شده). پایین صفحه «قطع اتصال» را بزنید و «کپی کد اتصال» تازه را از ربات بچسبانید.",
+                    color = Brand.Ink, fontSize = 13.sp, lineHeight = 20.sp,
+                )
+            } else if (!ready) {
                 Text("پایین همین صفحه شمارهٔ پیامک بانک را اضافه کنید.", color = Brand.Ink, fontSize = 13.sp)
             }
         }
@@ -339,7 +413,10 @@ private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
     val smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
     val power = context.getSystemService(PowerManager::class.java)
     val batteryFree = power?.isIgnoringBatteryOptimizations(context.packageName) ?: true
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
+    // Asked once and still refused: Android will not show the dialog again, and on recent versions a
+    // sideloaded app's SMS permission sits behind «Allow restricted settings» in App info.
+    var smsAsked by remember { mutableStateOf(false) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { smsAsked = true; refresh() }
     val notificationsOk = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -352,9 +429,21 @@ private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
         CheckRow(
             done = smsGranted,
             title = "اجازهٔ دریافت پیامک",
-            hint = "فقط پیامک‌های تازه، و فقط از شماره‌هایی که خودتان مجاز می‌کنید، به ربات می‌رود.",
-            action = "اجازه بده",
-        ) { ask.launch(Manifest.permission.RECEIVE_SMS) }
+            hint = if (smsAsked && !smsGranted) {
+                "اجازه داده نشد. در صفحه‌ای که باز می‌شود: «پیامک» را مجاز کنید. اگر غیرفعال بود، از منوی ⋮ بالای همان صفحه «Allow restricted settings» را بزنید و دوباره امتحان کنید."
+            } else {
+                "فقط پیامک‌های تازه، و فقط از شماره‌هایی که خودتان مجاز می‌کنید، به ربات می‌رود."
+            },
+            action = if (smsAsked) "تنظیمات" else "اجازه بده",
+        ) {
+            if (smsAsked) {
+                runCatching {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName)))
+                }
+            } else {
+                ask.launch(Manifest.permission.RECEIVE_SMS)
+            }
+        }
         HorizontalDivider(color = Brand.Canvas)
         CheckRow(
             done = batteryFree,
@@ -424,6 +513,7 @@ private fun CheckRow(done: Boolean, title: String, hint: String, action: String?
 @Composable
 private fun SendersCard(store: Store, refresh: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<String?>(null) }
 
     Section("شماره‌های مجاز بانک", Icons.Filled.Phone) {
@@ -446,14 +536,21 @@ private fun SendersCard(store: Store, refresh: () -> Unit) {
                 }
             }
         }
-        Button(
-            onClick = { adding = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("افزودن شماره")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { picking = true },
+                modifier = Modifier.weight(1f),
+                shape = MaterialTheme.shapes.medium,
+            ) { Text("انتخاب از پیامک‌ها") }
+            OutlinedButton(
+                onClick = { adding = true },
+                modifier = Modifier.weight(1f),
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("نوشتن شماره")
+            }
         }
 
         // Senders whose SMS looked like a bank's — offered, never added on their own.
@@ -473,6 +570,13 @@ private fun SendersCard(store: Store, refresh: () -> Unit) {
         }
     }
 
+    if (picking) {
+        PickSenderDialog(store, onDone = { value ->
+            if (value != null) store.addSender(value)
+            picking = false
+            refresh()
+        })
+    }
     if (adding) {
         AddSenderDialog(onDone = { value ->
             if (value != null) store.addSender(value)
@@ -491,6 +595,57 @@ private fun SendersCard(store: Store, refresh: () -> Unit) {
             dismissButton = { TextButton(onClick = { removing = null }) { Text("انصراف") } },
         )
     }
+}
+
+/**
+ * The phone's own SMS senders, bank-looking ones first. Asks for READ_SMS the first time; nothing
+ * read here leaves the phone, and a password SMS shows no preview.
+ */
+@Composable
+private fun PickSenderDialog(store: Store, onDone: (String?) -> Unit) {
+    val context = LocalContext.current
+    var granted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
+    }
+    var senders by remember { mutableStateOf<List<Inbox.Sender>?>(null) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    LaunchedEffect(granted) {
+        if (!granted) {
+            ask.launch(Manifest.permission.READ_SMS)
+        } else {
+            senders = withContext(Dispatchers.IO) { Inbox.group(Inbox.read(context), store.senders) }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = { onDone(null) },
+        title = { Text("انتخاب از پیامک‌ها") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                when {
+                    !granted -> Text("برای نشان دادن فرستنده‌های پیامک، اجازهٔ خواندن پیامک لازم است. این فهرست فقط روی گوشی شماست و به جایی فرستاده نمی‌شود.", fontSize = 13.sp, lineHeight = 20.sp, color = Brand.Muted)
+                    senders == null -> Text("در حال خواندن…", color = Brand.Muted)
+                    senders!!.isEmpty() -> Text("فرستندهٔ تازه‌ای پیدا نشد.", color = Brand.Muted)
+                    else -> senders!!.take(40).forEach { s ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                                .background(if (s.bankish) Brand.GreenSoft else Brand.Canvas).padding(10.dp),
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text((if (s.bankish) "🏦 " else "") + Persian.sender(s.from), fontWeight = FontWeight.SemiBold, color = Brand.Ink, fontSize = 14.sp)
+                                Text(
+                                    s.preview?.let { Persian.digits(it) } ?: "پیامک رمز — نمایش داده نمی‌شود",
+                                    color = Brand.Muted, fontSize = 12.sp, maxLines = 1,
+                                )
+                            }
+                            TextButton(onClick = { onDone(s.from) }) { Text("افزودن") }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(null) }) { Text("بستن") } },
+    )
 }
 
 @Composable
@@ -549,7 +704,15 @@ private fun UnpairButton(context: Context, store: Store, refresh: () -> Unit) {
             title = { Text("قطع اتصال") },
             text = { Text("از این به بعد هیچ پیامکی به ربات این فروشگاه فرستاده نمی‌شود. شماره‌های مجاز می‌مانند.") },
             confirmButton = {
-                TextButton(onClick = { store.unpair(); KeepAliveService.stop(context); asking = false; refresh() }) { Text("قطع اتصال", color = Brand.Bad) }
+                TextButton(onClick = {
+                    // Everything that wakes the phone for this app stops with the pairing.
+                    store.unpair()
+                    KeepAliveService.stop(context)
+                    Beat.cancel(context)
+                    SyncJob.cancelAll(context)
+                    asking = false
+                    refresh()
+                }) { Text("قطع اتصال", color = Brand.Bad) }
             },
             dismissButton = { TextButton(onClick = { asking = false }) { Text("انصراف") } },
         )

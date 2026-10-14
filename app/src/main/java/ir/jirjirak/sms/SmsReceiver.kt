@@ -53,14 +53,12 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         if (queued) {
-            val pending = goAsync()
-            Thread {
-                try {
-                    if (Net.flush(context) == 0) SyncJob.scheduleRetry(context)
-                } finally {
-                    pending.finish()
-                }
-            }.start()
+            // Never wait on the network here: a flush already in progress (two timeouts per item)
+            // would hold the broadcast past its limit and ANR. The foreground service keeps the
+            // process alive for this thread; the retry job is the safety net when there is none.
+            SyncJob.scheduleRetry(context)
+            val app = context.applicationContext
+            Thread { Net.flush(app) }.start()
         }
     }
 }

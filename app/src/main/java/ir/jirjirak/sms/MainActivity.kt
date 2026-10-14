@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (Store(this).endpoint != null) {
             SyncJob.schedulePeriodic(this)
+            Beat.schedule(this)
             KeepAliveService.start(this)
         }
         setContent {

@@ -1,6 +1,22 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// SemVer from version.properties — the single source. versionCode is derived so that every higher
+// version installs over the lower one; equal codes would refuse the update.
+val semver: String = Properties().apply { rootProject.file("version.properties").inputStream().use { load(it) } }
+    .getProperty("VERSION").trim()
+val semverParts = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)$").matchEntire(semver)?.destructured?.toList()?.map { it.toInt() }
+    ?: throw GradleException("version.properties: VERSION must be MAJOR.MINOR.PATCH, got \"$semver\"")
+require(semverParts[1] < 1000 && semverParts[2] < 1000) { "MINOR and PATCH must stay below 1000" }
+
+// A v* tag must name the version in the source — a release built from a mismatched tag would
+// carry one number on GitHub and another in the APK.
+System.getenv("GITHUB_REF_NAME")?.takeIf { it.startsWith("v") && System.getenv("GITHUB_REF_TYPE") == "tag" }?.let { tag ->
+    if (tag != "v$semver") throw GradleException("Tag $tag does not match version.properties ($semver).")
 }
 
 android {
@@ -11,8 +27,8 @@ android {
         applicationId = "ir.jirjirak.sms"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = semverParts[0] * 1_000_000 + semverParts[1] * 1_000 + semverParts[2]
+        versionName = semver
     }
 
     signingConfigs {
@@ -23,10 +39,17 @@ android {
             val path = System.getenv("KEYSTORE_PATH")
             val storePass = System.getenv("STORE_PASSWORD")
             val keyPass = System.getenv("KEY_PASSWORD")
-            if (path != null && file(path).exists() && !storePass.isNullOrEmpty() && !keyPass.isNullOrEmpty()) {
-                storeFile = file(path)
+            val hasKey = path != null && file(path).exists()
+            // A key without its passwords is a broken setup, not «build unsigned»: an unsigned
+            // release used to slip through and publish a release with no APK in it.
+            if (hasKey && (storePass.isNullOrBlank() || keyPass.isNullOrBlank())) {
+                throw GradleException("Release keystore present but STORE_PASSWORD / KEY_PASSWORD is missing.")
+            }
+            if (hasKey) {
+                storeFile = file(path!!)
                 storePassword = storePass
-                keyAlias = System.getenv("KEY_ALIAS") ?: "jirjirak"
+                // GitHub passes an unset secret as "", which an elvis alone would keep.
+                keyAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "jirjirak"
                 keyPassword = keyPass
             }
         }

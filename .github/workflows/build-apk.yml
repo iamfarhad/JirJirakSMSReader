@@ -79,5 +79,7 @@ jobs:
           name: جیرجیرک پیامک ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           files: output-apks/JirjirakSMS.apk
+          # No APK, no release: the bot links releases/latest/download/JirjirakSMS.apk.
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

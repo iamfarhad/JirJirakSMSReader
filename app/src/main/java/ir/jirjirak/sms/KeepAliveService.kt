@@ -9,9 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import androidx.core.content.ContextCompat
 
 /**
@@ -20,35 +18,29 @@ import androidx.core.content.ContextCompat
  * Oppo, Samsung…), leaves running. Without it the process is killed within minutes of the screen going
  * off on most phones sold in Iran, and a killed app hears no SMS.
  *
- * It also beats: every 5 minutes it delivers what is queued and pings the bot, which is how the bot
- * can tell the seller the moment the phone goes quiet.
+ * The beat itself (deliver, ping, every 5 minutes) is an alarm — see Beat — which this service arms.
  *
  * `specialUse` type: the app is sideloaded (no Play listing to justify it to), and `dataSync` is
  * capped at six hours a day from Android 15 — this has to run all day.
  */
 class KeepAliveService : Service() {
 
-    private val handler = Handler(Looper.getMainLooper())
-
-    private val beat = object : Runnable {
-        override fun run() {
-            Thread {
-                Net.flush(this@KeepAliveService)
-                Net.ping(this@KeepAliveService)
-            }.start()
-            handler.postDelayed(this, BEAT_MS)
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         val notification = notification(this)
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-        handler.post(beat)
+        // Android 12+ refuses to put a service in the foreground from the background in some cases —
+        // a START_STICKY restart of an app the battery manager still restricts is one. Uncaught, that
+        // is a crash Android retries in a loop; caught, the service stops and the beat (an alarm, not
+        // this service) and the jobs carry on until the app is next opened.
+        val ok = runCatching {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        }.isSuccess
+        Beat.schedule(this)
+        if (!ok) stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -58,11 +50,6 @@ class KeepAliveService : Service() {
             return START_NOT_STICKY
         }
         return START_STICKY   // killed anyway? Android brings it back.
-    }
-
-    override fun onDestroy() {
-        handler.removeCallbacks(beat)
-        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

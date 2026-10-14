@@ -14,8 +14,16 @@ import java.net.URL
  */
 object Net {
 
-    /** POST one JSON document; the response body, or null on any failure. */
-    fun post(url: String, body: JSONObject): String? = try {
+    /** What came back: the status (0 when nothing did) and the body. */
+    data class Reply(val code: Int, val body: String) {
+        val ok get() = code in 200..299
+
+        /** The secret is no longer this shop's: the seller changed the address, or the shop is gone. */
+        val revoked get() = code == 404 || code == 403
+    }
+
+    /** POST one JSON document. */
+    fun post(url: String, body: JSONObject): Reply = try {
         val con = URL(url).openConnection() as HttpURLConnection
         try {
             con.connectTimeout = 15_000
@@ -28,12 +36,12 @@ object Net {
             con.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = con.responseCode
             val text = (if (code < 400) con.inputStream else con.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            if (code in 200..299) text else null
+            Reply(code, text)
         } finally {
             con.disconnect()
         }
     } catch (e: Exception) {
-        null
+        Reply(0, "")
     }
 
     /** Send what is queued, oldest first, stopping at the first failure so the order holds. */
@@ -43,16 +51,19 @@ object Net {
         val endpoint = store.endpoint ?: return 0
         var sent = 0
         for (item in store.queue()) {
-            if (post(endpoint, item) == null) {
-                store.lastError = "send"
+            val reply = post(endpoint, item)
+            if (!reply.ok) {
+                store.lastError = if (reply.revoked) "revoked" else "send"
                 break
             }
-            sent++
+            // Off the queue the moment it is delivered: a kill half-way through re-sends nothing
+            // already sent (the bot also ignores a repeat of the same SMS on the same day).
+            store.remove(item.optString("id"))
+            store.markDelivered(item.optString("id"))
             store.lastSent = System.currentTimeMillis()
             store.lastError = null
-            store.markDelivered(item.optString("id"))
+            sent++
         }
-        if (sent > 0) store.dropFirst(sent)
         return sent
     }
 
@@ -62,8 +73,18 @@ object Net {
      * name, which is how the app shows WHICH shop it is paired with.
      */
     fun ping(context: Context): Boolean {
+        val endpoint = Store(context).endpoint ?: return false
+        return ping(context, endpoint) == Ping.OK
+    }
+
+    enum class Ping { OK, REVOKED, UNREACHABLE }
+
+    /**
+     * Ping `endpoint` — the paired one, or a CANDIDATE while pairing, which is saved only once this
+     * succeeds (saving it first let the screen switch to «paired» mid-request and cancel the pairing).
+     */
+    fun ping(context: Context, endpoint: String): Ping {
         val store = Store(context)
-        val endpoint = store.endpoint ?: return false
         val body = JSONObject()
             .put("version", BuildConfig.VERSION_NAME)
             .put("pending", store.queue().size)
@@ -73,13 +94,14 @@ object Net {
         (context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.let {
             body.put("battery", it.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY))
         }
-        val res = post("$endpoint/ping", body) ?: run {
-            store.lastError = "ping"
-            return false
+        val reply = post("$endpoint/ping", body)
+        if (!reply.ok) {
+            if (store.endpoint == endpoint) store.lastError = if (reply.revoked) "revoked" else "ping"
+            return if (reply.revoked) Ping.REVOKED else Ping.UNREACHABLE
         }
-        runCatching { JSONObject(res).optString("shop") }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { store.shop = it }
+        runCatching { JSONObject(reply.body).optString("shop") }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { store.shop = it }
         store.lastPing = System.currentTimeMillis()
         store.lastError = null
-        return true
+        return Ping.OK
     }
 }

@@ -18,7 +18,10 @@ class SyncJob : JobService() {
         Thread {
             Net.flush(this)
             Net.ping(this)
-            jobFinished(params, false)
+            // The retry job asks to be run again (with its backoff) while anything is still queued;
+            // `false` here made the backoff dead config and a failed retry the last one.
+            val again = params.jobId == RETRY && Store(this).queue().isNotEmpty() && Store(this).endpoint != null
+            jobFinished(params, again)
         }.start()
         return true
     }
@@ -40,6 +43,11 @@ class SyncJob : JobService() {
                     .setPersisted(true)
                     .build(),
             ) }
+        }
+
+        /** Unpaired: nothing should wake the phone for this app any more. */
+        fun cancelAll(c: Context) {
+            c.getSystemService(JobScheduler::class.java)?.cancelAll()
         }
 
         fun scheduleRetry(c: Context) {

@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- RECEIVE only: the app hears new SMS as they arrive. It never reads the inbox. -->
+    <!-- RECEIVE: hears new SMS as they arrive (only allowed senders' leave the phone). -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- READ: only when the seller opens «انتخاب از پیامک‌ها», to list senders on screen. Optional;
+         nothing read this way is sent anywhere. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Required by JobScheduler for a job that waits for a network; without it, scheduling throws. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -50,6 +53,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".Beat"
+            android:exported="false" />
 
         <service
             android:name=".KeepAliveService"

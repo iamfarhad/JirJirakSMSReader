@@ -8,8 +8,8 @@ package ir.jirjirak.sms
  */
 object Rules {
 
-    /** The code the bot hands out: «jirjirak-sms:» and the shop's ingest URL. */
-    private val CODE = Regex("""^https?://[^\s/]+(/\S*)?/api/bank-sms/[A-Za-z0-9]{20,80}$""")
+    /** The code the bot hands out: «jirjirak-sms:» and the shop's ingest URL — https only. */
+    private val CODE = Regex("""^https://[^\s/?#]+(/[^\s?#]*)?/api/bank-sms/[A-Za-z0-9]{20,80}$""")
 
     /** The ingest URL inside a pairing code, or null for anything else on the clipboard. */
     fun parseCode(raw: String?): String? {
@@ -21,20 +21,46 @@ object Rules {
     }
 
     /**
-     * One spelling per sender, so «+989121234567», «00989121234567» and «09121234567» are the same
-     * number, and «BankMellat» matches «bankmellat».
+     * Persian text as banks write it, made comparable: Arabic ك/ي/ى and أ/إ folded to their Persian
+     * forms, the zero-width non-joiner dropped (یک‌بار = یکبار), Persian and Arabic digits to ASCII.
+     * Many Iranian banks send Arabic letters; a word list in Persian letters alone misses them.
+     */
+    fun canon(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (c in text) {
+            when (c) {
+                'ك' -> sb.append('ک')
+                'ي', 'ى' -> sb.append('ی')
+                'أ', 'إ' -> sb.append('ا')
+                'ة' -> sb.append('ه')
+                '‌', '‏', '‎' -> {}
+                in '۰'..'۹' -> sb.append('0' + (c - '۰'))
+                in '٠'..'٩' -> sb.append('0' + (c - '٠'))
+                else -> sb.append(c)
+            }
+        }
+        return sb.toString()
+    }
+
+    /**
+     * One spelling per sender, so «+989121234567», «00989121234567», «۰۹۱۲ ۱۲۳ ۴۵۶۷» and
+     * «(0912) 123-4567» are the same number, and «BankMellat» matches «bankmellat». A seller typing
+     * on a Persian keyboard writes Persian digits; the phone reports ASCII ones.
      */
     fun normalize(sender: String): String {
-        val s = sender.trim().replace(" ", "").replace("-", "")
-        val digits = s.removePrefix("+")
-        if (digits.isNotEmpty() && digits.all { it.isDigit() }) {
+        val s = canon(sender).filterNot { it.isWhitespace() || it == '-' || it == '(' || it == ')' || it == ' ' }
+        val international = s.startsWith("+") || s.startsWith("00")
+        val digits = s.removePrefix("+").let { if (it.startsWith("00")) it.removePrefix("00") else it }
+        if (digits.isNotEmpty() && digits.all { it in '0'..'9' }) {
             return when {
-                digits.startsWith("0098") -> "0" + digits.removePrefix("0098")
-                digits.startsWith("98") && digits.length > 10 -> "0" + digits.removePrefix("98")
+                // A country code was written: +98… and 0098… are the national 0…
+                international && digits.startsWith("98") -> "0" + digits.removePrefix("98")
+                // 98 + a ten-digit mobile, written without the plus.
+                !international && digits.length == 12 && digits.startsWith("989") -> "0" + digits.removePrefix("98")
                 else -> digits
             }
         }
-        return s.lowercase()
+        return s.removePrefix("+").lowercase()
     }
 
     fun isAllowed(sender: String, allowed: Collection<String>): Boolean {
@@ -42,18 +68,30 @@ object Rules {
         return n.isNotEmpty() && allowed.any { normalize(it) == n }
     }
 
-    /** One-time passwords and verification codes never leave the phone, from any sender. */
-    private val SECRET = listOf("رمز", "پویا", "کد تایید", "کد تأیید", "کدتایید", "otp", "password", "verification code", "یکبار مصرف", "یک بار مصرف")
+    /** Phrases of a one-time password or a login/verification code. Matched on canon() text. */
+    private val SECRET = listOf(
+        "رمز پویا", "رمزپویا", "رمز یکبار", "رمز یک بار", "یکبار مصرف", "یک بار مصرف", "رمز دوم", "رمز اینترنتی",
+        "کد تایید", "کد تأیید", "کدتایید", "کد ورود", "کد فعالسازی", "کد فعال سازی", "کد امنیتی", "کد یکبار",
+        "otp", "one-time", "one time password", "verification code", "your code", "code:", "password", "passcode",
+    )
 
+    /** «رمز» followed closely by a 4–8 digit code — «رمز: 123456», «رمز شما 8812». */
+    private val CODE_AFTER_RAMZ = Regex("""رمز(?!ارز)[^\d\n]{0,10}\d{4,8}(?!\d)""")
+
+    /**
+     * One-time passwords and verification codes never leave the phone, from any sender. Bare «رمز»
+     * and «پویا» are NOT enough: «پویا» is a name a deposit can come from (واریز پایا از پویا …), and
+     * banks put «رمز خود را در اختیار دیگران قرار ندهید» under real transactions.
+     */
     fun isSecret(body: String): Boolean {
-        val b = body.lowercase()
-        return SECRET.any { b.contains(it) }
+        val b = canon(body).lowercase()
+        return SECRET.any { b.contains(it) } || CODE_AFTER_RAMZ.containsMatchIn(b)
     }
 
     /** Words a bank's transaction SMS carries — used only to SUGGEST a sender, never to forward. */
     private val BANKISH = listOf("مانده", "موجودی", "واریز", "برداشت", "انتقال", "حساب", "کارت", "مبلغ")
 
-    fun looksLikeBank(body: String): Boolean = BANKISH.any { body.contains(it) }
+    fun looksLikeBank(body: String): Boolean = canon(body).let { b -> BANKISH.any { b.contains(it) } }
 
     /** Forward this SMS? Only from a chosen sender, and never a password. */
     fun shouldForward(sender: String, body: String, allowed: Collection<String>): Boolean =
