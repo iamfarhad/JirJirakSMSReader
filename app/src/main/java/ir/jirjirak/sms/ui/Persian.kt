@@ -19,6 +19,9 @@ object Persian {
      */
     fun sender(s: String): String = "⁦" + digits(s) + "⁩"
 
+    /** A host name, a model number, a version: left-to-right and left alone. */
+    fun latin(s: String): String = "⁦" + s + "⁩"
+
     fun ago(millis: Long, now: Long = System.currentTimeMillis()): String {
         if (millis <= 0) return "هنوز نه"
         val s = (now - millis) / 1000

@@ -86,8 +86,8 @@ private fun UpdateCard(store: Store, now: Long) {
         },
     ) {
         Text(
-            "نسخهٔ نصب‌شده: " + Persian.digits(BuildConfig.VERSION_NAME) +
-                (latest?.let { " · نسخهٔ تازه: " + Persian.digits(it.version) } ?: ""),
+            "نسخهٔ نصب‌شده: " + Persian.sender(BuildConfig.VERSION_NAME) +
+                (latest?.let { " · نسخهٔ تازه: " + Persian.sender(it.version) } ?: ""),
             color = Brand.Ink, fontSize = 14.sp,
         )
         when {

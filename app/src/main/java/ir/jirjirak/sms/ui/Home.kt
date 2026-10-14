@@ -685,7 +685,7 @@ fun JirjirakCard() {
 @Composable
 fun VersionLine() {
     Text(
-        "جیرجیرک پیامک · نسخهٔ " + Persian.digits(ir.jirjirak.sms.BuildConfig.VERSION_NAME),
+        "جیرجیرک پیامک · نسخهٔ " + Persian.sender(ir.jirjirak.sms.BuildConfig.VERSION_NAME),
         color = Brand.Muted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth(),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )

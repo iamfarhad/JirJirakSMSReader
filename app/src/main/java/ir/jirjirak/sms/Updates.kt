@@ -61,12 +61,22 @@ object Updates {
         download(context, latest)
     }
 
-    /** The newer version already known, or null when this copy is up to date. */
+    /**
+     * The newer version already known, or null when this copy is up to date. The bot's word from
+     * the last ping counts too, so a release the bot announced shows up without waiting for the
+     * next six-hourly check.
+     */
     fun available(context: Context): Latest? {
         val store = Store(context)
-        val v = store.latestVersion ?: return null
-        val url = store.latestUrl ?: return null
-        return if (SemVer.isNewer(v, BuildConfig.VERSION_NAME)) Latest(v, url) else null
+        val known = store.latestVersion?.let { v -> store.latestUrl?.let { Latest(v, it) } }
+        val bot = fromBot(store)
+        val latest = when {
+            known == null -> bot
+            bot == null -> known
+            SemVer.isNewer(bot.version, known.version) -> bot
+            else -> known
+        } ?: return null
+        return if (SemVer.isNewer(latest.version, BuildConfig.VERSION_NAME)) latest else null
     }
 
     private fun fromBot(store: Store): Latest? {
