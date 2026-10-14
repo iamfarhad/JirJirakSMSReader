@@ -139,7 +139,7 @@ private fun Header() {
             Modifier
                 .size(52.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Brand.Violet),
+                .background(Brand.Green),
             contentAlignment = Alignment.Center,
         ) {
             Image(painterResource(R.drawable.ic_cricket), contentDescription = null, modifier = Modifier.size(52.dp))
@@ -236,10 +236,10 @@ private fun Steps(vararg steps: String) {
     steps.forEachIndexed { i, s ->
         Row(verticalAlignment = Alignment.Top) {
             Box(
-                Modifier.size(24.dp).clip(CircleShape).background(Brand.VioletSoft),
+                Modifier.size(24.dp).clip(CircleShape).background(Brand.GreenSoft),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(Persian.number(i + 1), color = Brand.VioletDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(Persian.number(i + 1), color = Brand.GreenDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
             Spacer(Modifier.width(10.dp))
             Text(s, color = Brand.Ink, fontSize = 14.sp, lineHeight = 22.sp)

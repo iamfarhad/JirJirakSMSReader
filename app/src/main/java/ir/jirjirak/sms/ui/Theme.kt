@@ -11,14 +11,14 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 
-/** Jirjirak's own palette: the bot's violet on a light, calm surface. */
+/** Jirjirak's own palette: a cricket's green on a light, calm surface. */
 object Brand {
-    val Violet = Color(0xFF6D5EFC)
-    val VioletDark = Color(0xFF4B3FD1)
-    val VioletSoft = Color(0xFFEDEBFF)
-    val Canvas = Color(0xFFF6F5FF)
-    val Ink = Color(0xFF1B1A2E)
-    val Muted = Color(0xFF6B6A80)
+    val Green = Color(0xFF16A34A)
+    val GreenDark = Color(0xFF166534)
+    val GreenSoft = Color(0xFFDCFCE7)
+    val Canvas = Color(0xFFF2FAF5)
+    val Ink = Color(0xFF14231A)
+    val Muted = Color(0xFF5F7166)
     val Good = Color(0xFF1F9D57)
     val GoodSoft = Color(0xFFE5F6EC)
     val Warn = Color(0xFFB7791F)
@@ -31,10 +31,10 @@ object Brand {
 fun JirjirakTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = lightColorScheme(
-            primary = Brand.Violet,
+            primary = Brand.Green,
             onPrimary = Color.White,
-            primaryContainer = Brand.VioletSoft,
-            onPrimaryContainer = Brand.VioletDark,
+            primaryContainer = Brand.GreenSoft,
+            onPrimaryContainer = Brand.GreenDark,
             background = Brand.Canvas,
             onBackground = Brand.Ink,
             surface = Color.White,
