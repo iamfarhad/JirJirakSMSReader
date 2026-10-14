@@ -17,7 +17,8 @@ class ReportAndUpdatesTest {
         assertEquals(Jalali(1405, 7, 23), Jalali.fromGregorian(2026, 10, 15))   // the Bank Melli SMS's «07/23»
         assertEquals(Jalali(1403, 1, 1), Jalali.fromGregorian(2024, 3, 20))     // Nowruz 1403
         assertEquals(Jalali(1404, 1, 1), Jalali.fromGregorian(2025, 3, 21))     // Nowruz 1404
-        assertEquals(Jalali(1402, 12, 30), Jalali.fromGregorian(2024, 3, 19))   // a leap Esfand
+        assertEquals(Jalali(1402, 12, 29), Jalali.fromGregorian(2024, 3, 19))   // 1402 is not a leap year
+        assertEquals(Jalali(1403, 12, 30), Jalali.fromGregorian(2025, 3, 20))   // 1403 is
         assertEquals(Jalali(1404, 10, 11), Jalali.fromGregorian(2026, 1, 1))
         assertEquals("۲۳ مهر ۱۴۰۵", Jalali.fromGregorian(2026, 10, 15).full())
     }

@@ -31,16 +31,19 @@
 - **اتصال با یک کد:** در ربات «📋 کپی کد اتصال» را بزنید و در اپ «چسباندن کد اتصال». تمام.
 - **فقط شماره‌هایی که خودتان مجاز می‌کنید:** تا وقتی شمارهٔ بانک را اضافه نکنید، هیچ پیامکی از گوشی خارج نمی‌شود. شماره را می‌توانید از میان پیامک‌های گوشی انتخاب کنید.
 - **رمز یکبار مصرف هرگز فرستاده نمی‌شود:** پیامک رمز پویا و کد تأیید، حتی از شمارهٔ مجاز، روی گوشی می‌ماند.
+- **گزارش هر پیامک:** هر پیامک بانک با نتیجه‌اش ثبت می‌شود — «با فاکتور تطبیق شد و سفارش تأیید شد»، «در انتظار بررسی مدیر»، «فاکتوری با این مبلغ نبود» — و هر پیامکی که روی گوشی ماند، با دلیلش. قطع و وصل شدن ارتباط هم همین‌جاست، و یک دکمه کل گزارش را برای پشتیبانی کپی می‌کند.
 - **همیشه بیدار:** با یک اعلان کوچک ثابت در پس‌زمینه کار می‌کند تا گوشی آن را نخواباند. اگر گوشی قطع شود، ربات به شما خبر می‌دهد.
 - **بدون اینترنت هم چیزی گم نمی‌شود:** پیامک‌ها روی گوشی صف می‌شوند و با وصل شدن اینترنت فرستاده می‌شوند.
-- **به‌روزرسانی:** نسخهٔ تازه را خودش پیدا می‌کند و با اعلان خبر می‌دهد.
+- **اشتراک فروشگاه جلوی چشم:** سطح اشتراک جیرجیرک، تاریخ انقضا و تعداد رسیدهای در انتظار بررسی را از ربات می‌گیرد و نشان می‌دهد.
+- **به‌روزرسانی خودکار:** نسخهٔ تازه را خودش پیدا می‌کند، در پس‌زمینه دانلود می‌کند و با یک اعلان خبر می‌دهد؛ شما فقط «نصب» را می‌زنید.
 
 ## تصاویر
 
 <p align="center">
-  <img src="docs/screenshots/pair.png" width="240" alt="اتصال به فروشگاه" />
-  <img src="docs/screenshots/home.png" width="240" alt="صفحهٔ اصلی" />
-  <img src="docs/screenshots/senders.png" width="240" alt="شماره‌های مجاز بانک" />
+  <img src="docs/screenshots/pair.png" width="200" alt="اتصال به فروشگاه" />
+  <img src="docs/screenshots/home.png" width="200" alt="خانه" />
+  <img src="docs/screenshots/senders.png" width="200" alt="شماره‌های مجاز بانک" />
+  <img src="docs/screenshots/report.png" width="200" alt="گزارش" />
 </p>
 
 ## نصب و راه‌اندازی
@@ -77,13 +80,14 @@ Kotlin + Jetpack Compose, no third-party libraries. Persian RTL UI in Vazirmatn 
 |---|---|
 | `Rules` | What may leave the phone: pairing code, sender normalisation, OTP detection. Pure, unit-tested |
 | `SmsReceiver` | Hears each new SMS (works with the app closed), applies `Rules`, queues it |
-| `Store` | Pairing, allowed senders, suggestions, offline queue, delivery log — one process-wide lock |
-| `Net` | `POST {ingest}` per SMS; `POST {ingest}/ping` heartbeat (version, queue, allowed senders) |
+| `Store` | Pairing, allowed senders, suggestions, offline queue, the event log — one process-wide lock, and a Compose-observable revision so the screen redraws on every write |
+| `Net` | `POST {ingest}` per SMS (the bot's verdict goes into the log); `POST {ingest}/ping` heartbeat (version, queue, allowed senders, SMS permission) — the reply carries the shop's subscription and the latest app version |
 | `KeepAliveService` | Foreground service (`specialUse`) so vendor battery managers do not kill the app |
 | `Beat` | Allow-while-idle alarm every 5 min: flush, ping, check for updates |
 | `SyncJob` / `BootReceiver` | Network-bound retry job; re-arms everything after reboot or update |
 | `Inbox` | «انتخاب از پیامک‌ها»: groups inbox senders on screen (never sent) |
-| `Updates` / `SemVer` | Latest-release check against GitHub; one notification per new version |
+| `Updates` / `SemVer` | Latest release from the bot's ping or the GitHub releases-page redirect (no API, no rate limit); DownloadManager + FileProvider hand the APK to the installer |
+| `ui/` | `App` (tabs), `Home` (status, subscription, setup, senders), `Report` (events by Jalali day, diagnostics), `More` (update, links, connection) |
 
 The bot side lives in the Jirjirak bot: `POST /api/bank-sms/{secret}` (ingest) and `…/ping` (heartbeat).
 
