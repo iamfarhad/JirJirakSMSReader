@@ -4,6 +4,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -55,6 +56,28 @@ fun JirjirakTheme(content: @Composable () -> Unit) {
             onSurfaceVariant = Brand.Muted,
             error = Brand.Bad,
         ),
+        // Vazirmatn (the current Vazir) for EVERY text style — buttons, dialogs and text fields take
+        // theirs from here, not from the ProvideTextStyle below, and would otherwise fall back to
+        // the system font.
+        typography = Typography().let { t ->
+            Typography(
+                displayLarge = t.displayLarge.copy(fontFamily = Vazirmatn),
+                displayMedium = t.displayMedium.copy(fontFamily = Vazirmatn),
+                displaySmall = t.displaySmall.copy(fontFamily = Vazirmatn),
+                headlineLarge = t.headlineLarge.copy(fontFamily = Vazirmatn),
+                headlineMedium = t.headlineMedium.copy(fontFamily = Vazirmatn),
+                headlineSmall = t.headlineSmall.copy(fontFamily = Vazirmatn),
+                titleLarge = t.titleLarge.copy(fontFamily = Vazirmatn),
+                titleMedium = t.titleMedium.copy(fontFamily = Vazirmatn),
+                titleSmall = t.titleSmall.copy(fontFamily = Vazirmatn),
+                bodyLarge = t.bodyLarge.copy(fontFamily = Vazirmatn),
+                bodyMedium = t.bodyMedium.copy(fontFamily = Vazirmatn),
+                bodySmall = t.bodySmall.copy(fontFamily = Vazirmatn),
+                labelLarge = t.labelLarge.copy(fontFamily = Vazirmatn),
+                labelMedium = t.labelMedium.copy(fontFamily = Vazirmatn),
+                labelSmall = t.labelSmall.copy(fontFamily = Vazirmatn),
+            )
+        },
         shapes = Shapes(
             small = RoundedCornerShape(14.dp),
             medium = RoundedCornerShape(18.dp),
