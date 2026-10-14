@@ -10,6 +10,8 @@ class BootReceiver : BroadcastReceiver() {
         if (Store(context).endpoint != null) {
             SyncJob.schedulePeriodic(context)
             SyncJob.scheduleRetry(context)
+            // Starting a foreground service from BOOT_COMPLETED is one of Android's allowed cases.
+            KeepAliveService.start(context)
         }
     }
 }

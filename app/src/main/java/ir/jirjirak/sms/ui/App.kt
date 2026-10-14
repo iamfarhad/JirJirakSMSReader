@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -68,7 +69,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import ir.jirjirak.sms.Autostart
 import ir.jirjirak.sms.BuildConfig
+import ir.jirjirak.sms.KeepAliveService
 import ir.jirjirak.sms.Net
 import ir.jirjirak.sms.R
 import ir.jirjirak.sms.Rules
@@ -189,6 +192,7 @@ private fun PairCard(store: Store, refresh: () -> Unit) {
             busy = false
             if (ok) {
                 SyncJob.schedulePeriodic(context)
+                KeepAliveService.start(context)
             } else {
                 store.unpair()
                 error = "به ربات وصل نشد. اینترنت گوشی را بررسی کنید؛ اگر درست است، کد تازه‌ای از ربات کپی کنید."
@@ -295,6 +299,13 @@ private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
     val power = context.getSystemService(PowerManager::class.java)
     val batteryFree = power?.isIgnoringBatteryOptimizations(context.packageName) ?: true
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
+    val notificationsOk = Build.VERSION.SDK_INT < 33 ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        KeepAliveService.start(context)
+        refresh()
+    }
+    var autostartOpened by remember { mutableStateOf(false) }
 
     Section("آماده‌سازی گوشی") {
         CheckRow(
@@ -315,6 +326,22 @@ private fun ChecklistCard(context: Context, store: Store, refresh: () -> Unit) {
                     Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + context.packageName)),
                 )
             }
+        }
+        HorizontalDivider(color = Brand.Canvas)
+        CheckRow(
+            done = notificationsOk,
+            title = "اعلان «فعال است»",
+            hint = "یک اعلان کوچک و ثابت که نمی‌گذارد گوشی برنامه را ببندد. بدون آن، برنامه بعد از چند دقیقه می‌خوابد.",
+            action = "اجازه بده",
+        ) { if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) }
+        if (Autostart.needed) {
+            HorizontalDivider(color = Brand.Canvas)
+            CheckRow(
+                done = autostartOpened,
+                title = "اجرای خودکار (" + Build.MANUFACTURER + ")",
+                hint = "در این گوشی‌ها «اجرای خودکار» یا «Autostart» برای برنامه‌های تازه خاموش است. در صفحه‌ای که باز می‌شود، آن را برای «جیرجیرک پیامک» روشن کنید.",
+                action = "باز کن",
+            ) { Autostart.open(context); autostartOpened = true }
         }
         HorizontalDivider(color = Brand.Canvas)
         CheckRow(
@@ -481,7 +508,7 @@ private fun UnpairButton(context: Context, store: Store, refresh: () -> Unit) {
             title = { Text("قطع اتصال") },
             text = { Text("از این به بعد هیچ پیامکی به ربات این فروشگاه فرستاده نمی‌شود. شماره‌های مجاز می‌مانند.") },
             confirmButton = {
-                TextButton(onClick = { store.unpair(); asking = false; refresh() }) { Text("قطع اتصال", color = Brand.Bad) }
+                TextButton(onClick = { store.unpair(); KeepAliveService.stop(context); asking = false; refresh() }) { Text("قطع اتصال", color = Brand.Bad) }
             },
             dismissButton = { TextButton(onClick = { asking = false }) { Text("انصراف") } },
         )
