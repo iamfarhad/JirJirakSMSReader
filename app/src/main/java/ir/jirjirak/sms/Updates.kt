@@ -40,10 +40,15 @@ object Updates {
 
     data class Latest(val version: String, val url: String)
 
-    /** Ask now: the bot's word if it gave one, else GitHub. Remembered in the Store; null when neither answered. */
+    /**
+     * Ask now: the bot first — a fresh ping, so its answer is today's — then GitHub. Remembered in
+     * the Store; null when neither answered. GitHub is slow or blocked on many Iranian networks,
+     * which is why the bot is asked first and GitHub gets a short timeout.
+     */
     fun check(context: Context): Latest? {
         val store = Store(context)
         store.lastUpdateCheck = System.currentTimeMillis()
+        if (store.endpoint != null) runCatching { Net.ping(context) }
         val latest = fromBot(store) ?: fromGitHub() ?: return null
         store.latestVersion = latest.version
         store.latestUrl = latest.url
@@ -90,8 +95,8 @@ object Updates {
         val con = URL("$REPO/releases/latest").openConnection() as HttpURLConnection
         try {
             con.instanceFollowRedirects = false
-            con.connectTimeout = 15_000
-            con.readTimeout = 20_000
+            con.connectTimeout = 8_000
+            con.readTimeout = 8_000
             con.setRequestProperty("User-Agent", "jirjirak-sms/" + BuildConfig.VERSION_NAME)
             val code = con.responseCode
             if (code in 300..399) parseRedirect(con.getHeaderField("Location")) else null

@@ -65,7 +65,8 @@ fun JirjirakTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = base.copy(
             primary = Brand.Green,
-            onPrimary = Color.White,
+            // White on the night green is 2.3:1 — unreadable in sunlight; a deep green is 7:1.
+            onPrimary = if (Brand.dark) Color(0xFF052E16) else Color.White,
             primaryContainer = Brand.GreenSoft,
             onPrimaryContainer = Brand.GreenDark,
             background = Brand.Canvas,

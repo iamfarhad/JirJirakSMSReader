@@ -27,37 +27,82 @@ object Alerts {
     const val BATTERY_RESET = 30
 
     /** The bot unheard from for this long is worth telling the seller about, on the phone itself. */
-    const val OFFLINE_MS = 30 * 60 * 1000L
+    const val OFFLINE_MS = 40 * 60 * 1000L
 
-    /** «۱۷۵٬۰۱۳ تومان — سفارش سارا تأیید شد». */
+    private const val GROUP_APPROVED = "approved"
+    private const val ID_APPROVED_SUMMARY = 12
+
+    /** «۱۷۵٬۰۱۳ تومان — سفارش سارا». Pure: unit-tested. */
+    fun approvedText(amount: Long, customer: String?): String =
+        listOfNotNull(amount.takeIf { it > 0 }?.let { Money.toman(it) }, customer?.let { "سفارش $it" }).joinToString(" — ").ifEmpty { "یک سفارش" }
+
+    /** One per approval, grouped: a backlog flushed after a night offline is one stack, not twenty. */
     fun approved(context: Context, amount: Long, customer: String?) {
-        val text = Money.toman(amount) + (customer?.let { " — سفارش $it" } ?: "")
         notify(context, CHANNEL_APPROVED, "سفارش‌های تأییدشده", (System.currentTimeMillis() % 100_000).toInt() + 1000,
-            "✅ سفارش خودکار تأیید شد", text, MainActivity.TAB_REPORT, importance = NotificationManager.IMPORTANCE_DEFAULT)
+            "✅ سفارش خودکار تأیید شد", approvedText(amount, customer), MainActivity.TAB_REPORT,
+            importance = NotificationManager.IMPORTANCE_DEFAULT, group = GROUP_APPROVED)
+        notify(context, CHANNEL_APPROVED, "سفارش‌های تأییدشده", ID_APPROVED_SUMMARY,
+            "✅ سفارش‌های خودکار تأییدشده", "جیرجیرک پیامک", MainActivity.TAB_REPORT,
+            importance = NotificationManager.IMPORTANCE_DEFAULT, group = GROUP_APPROVED, summary = true)
+    }
+
+    enum class Decision { WARN, CLEAR, NONE }
+
+    /** Low battery: warn once below [BATTERY_LOW] unplugged; clear once plugged in or recovered. Pure. */
+    fun batteryDecision(level: Int, charging: Boolean, warned: Boolean): Decision = when {
+        level in 0 until BATTERY_LOW && !charging && !warned -> Decision.WARN
+        warned && (charging || level >= BATTERY_RESET) -> Decision.CLEAR
+        else -> Decision.NONE
+    }
+
+    /** The bot unheard from past [OFFLINE_MS]: warn once; clear when it answers. Never before a first ping. Pure. */
+    fun offlineDecision(paired: Boolean, lastPing: Long, now: Long, warned: Boolean): Decision {
+        val offline = paired && lastPing > 0 && now - lastPing > OFFLINE_MS
+        return when {
+            offline && !warned -> Decision.WARN
+            !offline && warned -> Decision.CLEAR
+            else -> Decision.NONE
+        }
+    }
+
+    /** Unpaired: nothing it said is true any more. */
+    fun clear(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.cancel(ID_BATTERY)
+        manager.cancel(ID_OFFLINE)
     }
 
     /** From the beat: battery and connection, each told once until it recovers. */
     fun check(context: Context) {
         val store = Store(context)
+        val manager = context.getSystemService(NotificationManager::class.java)
         val (level, charging) = battery(context)
-        if (level in 0 until BATTERY_LOW && !charging && !store.batteryWarned) {
-            store.batteryWarned = true
-            notify(context, CHANNEL_WARN, "هشدارها", ID_BATTERY,
-                "🔋 شارژ گوشی کم است (${ir.jirjirak.sms.ui.Persian.number(level)}٪)",
-                "اگر گوشی خاموش شود، پیامک‌های بانک به ربات نمی‌رسد. گوشی را به شارژ بزنید.", MainActivity.TAB_HOME)
-        } else if (level >= BATTERY_RESET || charging) {
-            store.batteryWarned = false
+        when (batteryDecision(level, charging, store.batteryWarned)) {
+            Decision.WARN -> {
+                store.batteryWarned = true
+                notify(context, CHANNEL_WARN, "هشدارها", ID_BATTERY,
+                    "🔋 شارژ گوشی کم است (${ir.jirjirak.sms.ui.Persian.number(level)}٪)",
+                    "اگر گوشی خاموش شود، پیامک‌های بانک به ربات نمی‌رسد. گوشی را به شارژ بزنید.", MainActivity.TAB_HOME)
+            }
+            Decision.CLEAR -> {
+                store.batteryWarned = false
+                manager?.cancel(ID_BATTERY)
+            }
+            Decision.NONE -> {}
         }
 
-        val offline = store.endpoint != null && store.lastPing > 0 && System.currentTimeMillis() - store.lastPing > OFFLINE_MS
-        if (offline && !store.offlineWarned) {
-            store.offlineWarned = true
-            notify(context, CHANNEL_WARN, "هشدارها", ID_OFFLINE,
-                "📵 ارتباط با ربات قطع است",
-                "بیش از نیم ساعت است که ربات جواب نداده. اینترنت گوشی را بررسی کنید؛ پیامک‌ها روی گوشی صف می‌شوند و گم نمی‌شوند.", MainActivity.TAB_HOME)
-        } else if (!offline && store.offlineWarned) {
-            store.offlineWarned = false
-            context.getSystemService(NotificationManager::class.java)?.cancel(ID_OFFLINE)
+        when (offlineDecision(store.endpoint != null, store.lastPing, System.currentTimeMillis(), store.offlineWarned)) {
+            Decision.WARN -> {
+                store.offlineWarned = true
+                notify(context, CHANNEL_WARN, "هشدارها", ID_OFFLINE,
+                    "📵 ارتباط با ربات قطع است",
+                    "بیش از ۴۰ دقیقه است که ربات جواب نداده. اینترنت گوشی را بررسی کنید؛ پیامک‌ها روی گوشی صف می‌شوند و گم نمی‌شوند.", MainActivity.TAB_HOME)
+            }
+            Decision.CLEAR -> {
+                store.offlineWarned = false
+                manager?.cancel(ID_OFFLINE)
+            }
+            Decision.NONE -> {}
         }
     }
 
@@ -74,6 +119,7 @@ object Alerts {
     private fun notify(
         context: Context, channel: String, channelName: String, id: Int,
         title: String, text: String, tab: Int, importance: Int = NotificationManager.IMPORTANCE_HIGH,
+        group: String? = null, summary: Boolean = false,
     ) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= 26) {
@@ -93,6 +139,7 @@ object Alerts {
                     .setStyle(Notification.BigTextStyle().bigText(text))
                     .setContentIntent(open)
                     .setAutoCancel(true)
+                    .apply { if (group != null) setGroup(group).setGroupSummary(summary) }
                     .build(),
             )
         }

@@ -25,6 +25,13 @@ class MainActivity : ComponentActivity() {
     /** The tab asked for by the intent that opened (or re-opened) the app. */
     private val wantedTab = mutableIntStateOf(TAB_HOME)
 
+    /**
+     * Bumped with every intent that names a tab. A second notification naming the SAME tab must
+     * still switch to it after the seller wandered off — and a state set to its current value does
+     * not recompose anything.
+     */
+    private val tabRequest = mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Store(this).endpoint != null) {
@@ -35,14 +42,17 @@ class MainActivity : ComponentActivity() {
         wantedTab.intValue = intent?.getIntExtra(TAB, TAB_HOME) ?: TAB_HOME
         setContent {
             JirjirakTheme {
-                App(resumed.intValue, wantedTab.intValue)
+                App(resumed.intValue, wantedTab.intValue, tabRequest.intValue)
             }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        wantedTab.intValue = intent.getIntExtra(TAB, wantedTab.intValue)
+        if (intent.hasExtra(TAB)) {
+            wantedTab.intValue = intent.getIntExtra(TAB, TAB_HOME)
+            tabRequest.intValue++
+        }
     }
 
     override fun onResume() {

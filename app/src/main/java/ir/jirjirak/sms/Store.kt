@@ -31,7 +31,7 @@ class Store(context: Context) {
          */
         val revision = mutableIntStateOf(0)
 
-        const val EVENTS_MAX = 300
+        const val EVENTS_MAX = 200
     }
 
     private val prefs: SharedPreferences =
@@ -68,7 +68,8 @@ class Store(context: Context) {
     fun unpair() = synchronized(LOCK) {
         commit(
             prefs.edit().remove("endpoint").remove("shop").remove("shop_info").remove("queue")
-                .remove("last_error").remove("latest_from_bot").remove("manage_key"),
+                .remove("last_error").remove("latest_from_bot").remove("manage_key").remove("manage_key_revoked")
+                .remove("battery_warned").remove("offline_warned"),
         )
     }
 
@@ -132,10 +133,12 @@ class Store(context: Context) {
         get() = prefs.getString("manage_key", null)
         set(v) = commit(prefs.edit().putString("manage_key", v))
 
-    /** Asked once after pairing whether the inbox's one bank sender is theirs; never again. */
-    var senderSuggested: Boolean
-        get() = prefs.getBoolean("sender_suggested", false)
-        set(v) = commit(prefs.edit().putBoolean("sender_suggested", v))
+    /** The bot refused the manage key (401): the tab asks for a fresh one, and says why. */
+    var manageKeyRevoked: Boolean
+        get() = prefs.getBoolean("manage_key_revoked", false)
+        set(v) = commit(prefs.edit().putBoolean("manage_key_revoked", v))
+
+    fun revokeManageKey() = commit(prefs.edit().remove("manage_key").putBoolean("manage_key_revoked", true))
 
     /** The seller said they switched on the vendor's «Autostart» — the phone has no way to tell us. */
     var autostartConfirmed: Boolean
@@ -202,7 +205,7 @@ class Store(context: Context) {
                 .put("kind", kind).put("status", status).put("title", title)
             if (detail != null) row.put("detail", detail)
             if (from != null) row.put("from", from)
-            if (body != null) row.put("body", body.take(600))
+            if (body != null) row.put("body", body.take(400))
             val items = listOf(row) + events()
             commit(prefs.edit().putString("events", JSONArray(items.take(EVENTS_MAX)).toString()))
         }

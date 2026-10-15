@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -66,6 +68,9 @@ private fun UpdateCard(store: Store, now: Long) {
     val installable = latest?.let { Updates.installable(context) }
     var checking by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
+    // The answer of «بررسی کن», said where it cannot be missed: a grey line at the foot of the card
+    // changed so little that sellers reported the button as doing nothing.
+    var checkOutcome by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     var progress by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     var needsPermission by remember { mutableStateOf(false) }
 
@@ -137,23 +142,27 @@ private fun UpdateCard(store: Store, now: Long) {
                 }
             }
         }
+        checkOutcome?.let { (ok, text) -> Notice(text, if (ok) Brand.GoodSoft else Brand.BadSoft, if (ok) Brand.Good else Brand.Bad) }
+        result?.let { Notice(it, Brand.BadSoft, Brand.Bad) }
         HorizontalDivider(color = Brand.Line)
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(result ?: ("آخرین بررسی: " + Persian.ago(store.lastUpdateCheck, now)), color = Brand.Muted, fontSize = 12.sp)
+                Text("آخرین بررسی: " + Persian.ago(store.lastUpdateCheck, now), color = Brand.Muted, fontSize = 12.sp)
             }
-            TextButton(enabled = !checking, onClick = {
+            if (checking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Brand.Green)
+            OutlinedButton(enabled = !checking, shape = MaterialTheme.shapes.medium, onClick = {
                 checking = true
+                checkOutcome = null
                 scope.launch {
                     val found = withContext(Dispatchers.IO) { Updates.check(context.applicationContext) }
                     checking = false
-                    result = when {
-                        found == null -> "بررسی ممکن نشد؛ اینترنت را بررسی کنید یا کمی بعد دوباره بزنید."
-                        SemVer.isNewer(found.version, BuildConfig.VERSION_NAME) -> "نسخهٔ " + Persian.digits(found.version) + " آماده است."
-                        else -> "نسخهٔ شما به‌روز است."
+                    checkOutcome = when {
+                        found == null -> false to "بررسی ممکن نشد: نه ربات جواب داد و نه گیت‌هاب. اینترنت گوشی را بررسی کنید و دوباره بزنید."
+                        SemVer.isNewer(found.version, BuildConfig.VERSION_NAME) -> true to "نسخهٔ تازه پیدا شد: " + Persian.sender(found.version) + " — دکمهٔ «دانلود» بالای همین کارت است."
+                        else -> true to "✅ نسخهٔ شما (" + Persian.sender(BuildConfig.VERSION_NAME.substringBefore('-')) + ") آخرین نسخه است."
                     }
                 }
-            }) { Text(if (checking) "در حال بررسی…" else "بررسی کن", fontWeight = FontWeight.SemiBold) }
+            }) { Text(if (checking) "در حال بررسی…" else "بررسی به‌روزرسانی", fontWeight = FontWeight.SemiBold) }
         }
     }
 }
@@ -191,6 +200,8 @@ private fun ConnectionCard(store: Store) {
                     // Everything that wakes the phone for this app stops with the pairing.
                     store.event("system", "info", "اتصال از فروشگاه قطع شد")
                     store.unpair()
+                    ir.jirjirak.sms.Alerts.clear(context)
+                    ir.jirjirak.sms.StatusWidget.refresh(context)
                     KeepAliveService.stop(context)
                     Beat.cancel(context)
                     SyncJob.cancelAll(context)

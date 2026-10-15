@@ -57,8 +57,11 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ReceiptsTab(store: Store, now: Long) {
     watchStore()
+    // The key lives in the Store and nowhere else: a refused key is cleared there, so pasting a new
+    // one redraws this tab straight into the list. (A remembered «needKey» flag outlived the paste
+    // and kept the seller on the «paste the key» card.)
     if (store.manageKey == null) {
-        ManageKeyCard(store, revoked = false)
+        ManageKeyCard(store, revoked = store.manageKeyRevoked)
         return
     }
 
@@ -66,7 +69,6 @@ fun ReceiptsTab(store: Store, now: Long) {
     val scope = rememberCoroutineScope()
     var receipts by remember { mutableStateOf<List<Receipts.Receipt>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var needKey by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var reasons by remember { mutableStateOf<List<Receipts.Reason>>(emptyList()) }
 
@@ -77,7 +79,8 @@ fun ReceiptsTab(store: Store, now: Long) {
             loading = false
             when (r) {
                 is Receipts.Result.Ok -> { receipts = r.value; error = null }
-                Receipts.Result.NeedKey -> needKey = true
+                Receipts.Result.NeedKey -> store.revokeManageKey()
+                Receipts.Result.AlreadyDecided -> load()
                 is Receipts.Result.Failed -> error = r.message
             }
             if (reasons.isEmpty()) {
@@ -85,12 +88,7 @@ fun ReceiptsTab(store: Store, now: Long) {
             }
         }
     }
-    LaunchedEffect(Unit) { load() }
-
-    if (needKey) {
-        ManageKeyCard(store, revoked = true)
-        return
-    }
+    LaunchedEffect(store.manageKey) { load() }
 
     Section(
         "رسیدهای در انتظار", Icons.Filled.Check,
@@ -108,24 +106,30 @@ fun ReceiptsTab(store: Store, now: Long) {
     receipts?.forEach { r ->
         ReceiptCard(r, now, reasons, onDecided = { message ->
             receipts = receipts?.filter { it.id != r.id }
-            store.event("system", "ok", message)
-        })
+            message?.let { store.event("system", "ok", it) }
+        }, onKeyRefused = { store.revokeManageKey() })
     }
 }
 
 @Composable
-private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.Reason>, onDecided: (String) -> Unit) {
+private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.Reason>, onDecided: (String?) -> Unit, onKeyRefused: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var image by remember(r.id) { mutableStateOf<Bitmap?>(null) }
     var showImage by remember(r.id) { mutableStateOf(false) }
+    var imageFailed by remember(r.id) { mutableStateOf(false) }
+    var imageAttempt by remember(r.id) { mutableStateOf(0) }
     var busy by remember(r.id) { mutableStateOf(false) }
     var error by remember(r.id) { mutableStateOf<String?>(null) }
     var confirmApprove by remember(r.id) { mutableStateOf(false) }
     var rejecting by remember(r.id) { mutableStateOf(false) }
 
-    LaunchedEffect(r.id, showImage) {
-        if (showImage && image == null && r.hasImage) image = withContext(Dispatchers.IO) { Receipts.image(context.applicationContext, r.id) }
+    LaunchedEffect(r.id, showImage, imageAttempt) {
+        if (showImage && image == null && r.hasImage) {
+            imageFailed = false
+            image = withContext(Dispatchers.IO) { Receipts.image(context.applicationContext, r.id) }
+            imageFailed = image == null
+        }
     }
 
     fun decide(action: suspend () -> Receipts.Result<Unit>, done: String) {
@@ -136,7 +140,9 @@ private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.R
             busy = false
             when (result) {
                 is Receipts.Result.Ok -> onDecided(done)
-                Receipts.Result.NeedKey -> error = "کد مدیریت باطل شده؛ کد تازه را از ربات بچسبانید."
+                // Decided elsewhere first — by the bot, or another admin: the card simply goes.
+                Receipts.Result.AlreadyDecided -> onDecided(null)
+                Receipts.Result.NeedKey -> onKeyRefused()
                 is Receipts.Result.Failed -> error = result.message
             }
         }
@@ -163,15 +169,18 @@ private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.R
             }
         }
         if (r.hasImage) {
-            if (!showImage) {
-                TextButton(onClick = { showImage = true }) { Text("🖼 دیدن عکس رسید") }
-            } else if (image == null) {
-                Text("در حال دریافت عکس…", color = Brand.Muted, fontSize = 12.sp)
-            } else {
-                Image(
-                    image!!.asImageBitmap(), contentDescription = "عکس رسید",
+            when {
+                !showImage -> TextButton(onClick = { showImage = true }) { Text("🖼 دیدن عکس رسید") }
+                imageFailed -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("عکس دریافت نشد.", color = Brand.Bad, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { imageAttempt++ }) { Text("دوباره") }
+                }
+                image == null -> Text("در حال دریافت عکس…", color = Brand.Muted, fontSize = 12.sp)
+                else -> Image(
+                    image!!.asImageBitmap(), contentDescription = "عکس رسید (برای بستن بزنید)",
                     contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).clip(MaterialTheme.shapes.small).clickable { showImage = false },
+                    // Closing the photo frees it: a dozen opened receipts must not exhaust an old phone.
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).clip(MaterialTheme.shapes.small).clickable { showImage = false; image = null },
                 )
             }
         }
@@ -242,6 +251,7 @@ private fun ManageKeyCard(store: Store, revoked: Boolean) {
         }
         error = null
         store.manageKey = key
+        store.manageKeyRevoked = false
         store.event("system", "ok", "تأیید و رد رسید از اپ فعال شد")
     }
 

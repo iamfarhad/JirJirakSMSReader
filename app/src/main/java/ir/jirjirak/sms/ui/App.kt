@@ -60,7 +60,7 @@ import kotlinx.coroutines.withContext
  * arriving, a background send — is on the screen the moment it is written.
  */
 @Composable
-fun App(resumed: Int, wantedTab: Int) {
+fun App(resumed: Int, wantedTab: Int, tabRequest: Int = 0) {
     val context = LocalContext.current
     val store = remember { Store(context) }
     watchStore()
@@ -76,7 +76,7 @@ fun App(resumed: Int, wantedTab: Int) {
     LaunchedEffect(resumed) { now = System.currentTimeMillis() }
 
     var tab by rememberSaveable { mutableIntStateOf(wantedTab) }
-    LaunchedEffect(wantedTab) { tab = wantedTab }
+    LaunchedEffect(wantedTab, tabRequest) { tab = wantedTab }
 
     LaunchedEffect(Unit) {
         // On opening, at most every 6 hours: the background beat asks too.

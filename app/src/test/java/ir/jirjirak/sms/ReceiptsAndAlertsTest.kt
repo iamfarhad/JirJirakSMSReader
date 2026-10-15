@@ -68,4 +68,66 @@ class ReceiptsAndAlertsTest {
         assertFalse(unreadable(JSONObject().put("kind", "sms").put("verdict", "با فاکتور تطبیق داده شد")))
         assertFalse(unreadable(JSONObject().put("kind", "ignored").put("detail", "نتوانست")))
     }
+
+    @Test
+    fun `only 401 asks for a new key — 404 is a lost pairing, and English never reaches the seller`() {
+        val ok = Receipts.outcome(200, "{}") { "parsed" }
+        assertEquals("parsed", (ok as Receipts.Result.Ok).value)
+        assertEquals(Receipts.Result.NeedKey, Receipts.outcome(401, "") { })
+        assertEquals(Receipts.Result.AlreadyDecided, Receipts.outcome(409, """{"message":"این رسید قبلاً بررسی شده است."}""") { })
+        val lost = Receipts.outcome(404, "") { } as Receipts.Result.Failed
+        assertTrue(lost.message, lost.message.contains("دوباره وصل"))
+        val throttled = Receipts.outcome(429, """{"message":"Too Many Attempts."}""") { } as Receipts.Result.Failed
+        assertFalse(throttled.message, throttled.message.contains("Too Many"))
+        val inactive = Receipts.outcome(403, """{"message":"Tenant not active"}""") { } as Receipts.Result.Failed
+        assertFalse(inactive.message.contains("Tenant"))
+        val ours = Receipts.outcome(500, """{"message":"تأیید انجام نشد؛ از ربات امتحان کنید."}""") { } as Receipts.Result.Failed
+        assertEquals("تأیید انجام نشد؛ از ربات امتحان کنید.", ours.message)
+    }
+
+    @Test
+    fun `a huge receipt photo is decoded at screen size`() {
+        assertEquals(1, Receipts.sampleSize(1080, 1920))
+        assertEquals(4, Receipts.sampleSize(3000, 4000))
+        assertEquals(2, Receipts.sampleSize(1200, 1600))
+    }
+
+    @Test
+    fun `reasons parse, and a blank code is dropped`() {
+        val r = Receipts.parseReasons("""{"ok":true,"reasons":[{"code":"amount","label":"مبلغ اشتباه"},{"code":"","label":"x"}]}""")
+        assertEquals(listOf(Receipts.Reason("amount", "مبلغ اشتباه")), r)
+        assertTrue(Receipts.parseReasons("{}").isEmpty())
+    }
+
+    @Test
+    fun `low battery is told once, and cleared when plugged in`() {
+        assertEquals(Alerts.Decision.WARN, Alerts.batteryDecision(10, charging = false, warned = false))
+        assertEquals(Alerts.Decision.NONE, Alerts.batteryDecision(10, charging = false, warned = true))
+        assertEquals(Alerts.Decision.CLEAR, Alerts.batteryDecision(10, charging = true, warned = true))
+        assertEquals(Alerts.Decision.CLEAR, Alerts.batteryDecision(35, charging = false, warned = true))
+        assertEquals("between the bars: keep it", Alerts.Decision.NONE, Alerts.batteryDecision(20, charging = false, warned = true))
+        assertEquals("unknown is not low", Alerts.Decision.NONE, Alerts.batteryDecision(-1, charging = false, warned = false))
+    }
+
+    @Test
+    fun `the bot out of reach is told once, never before a first ping, and cleared when it answers`() {
+        val now = 1_800_000_000_000L
+        assertEquals(Alerts.Decision.WARN, Alerts.offlineDecision(true, now - 41 * 60_000, now, warned = false))
+        assertEquals("the widget's 40 minutes, not 30", Alerts.Decision.NONE, Alerts.offlineDecision(true, now - 35 * 60_000, now, warned = false))
+        assertEquals(Alerts.Decision.NONE, Alerts.offlineDecision(true, 0, now, warned = false))
+        assertEquals(Alerts.Decision.CLEAR, Alerts.offlineDecision(true, now - 60_000, now, warned = true))
+        assertEquals("unpaired", Alerts.Decision.CLEAR, Alerts.offlineDecision(false, 0, now, warned = true))
+    }
+
+    @Test
+    fun `the approval notification reads well with or without its parts`() {
+        assertEquals("۱۷۵٬۰۱۳ تومان — سفارش سارا", Alerts.approvedText(175013, "سارا"))
+        assertEquals("سفارش سارا", Alerts.approvedText(0, "سارا"))
+        assertEquals("یک سفارش", Alerts.approvedText(0, null))
+    }
+
+    @Test
+    fun `a widget that never heard from the bot does not say it is online`() {
+        assertEquals("📵 ارتباط قطع است", StatusWidget.lines(true, 1, 0, 0, 0, 1_800_000_000_000L).first)
+    }
 }

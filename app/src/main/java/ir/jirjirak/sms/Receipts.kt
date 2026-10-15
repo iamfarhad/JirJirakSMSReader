@@ -42,7 +42,45 @@ object Receipts {
         data class Ok<T>(val value: T) : Result<T>
         /** The key is wrong or was revoked: the seller has to paste a fresh one. */
         data object NeedKey : Result<Nothing>
+        /** Somebody — the bot, another admin — decided this receipt first. */
+        data object AlreadyDecided : Result<Nothing>
         data class Failed(val message: String) : Result<Nothing>
+    }
+
+    /**
+     * What a reply means, in the seller's words. Pure: unit-tested.
+     *
+     * Only 401 is «paste the key again». 404 is the PAIRING the bot no longer knows (the address
+     * was changed) or a bot too old to have this page — a new manage key fixes neither, and mapping
+     * it to NeedKey sent sellers round a loop. Laravel's own English («Too Many Attempts.», «Tenant
+     * not active») never reaches the screen; the bot's Persian messages do.
+     */
+    fun <T> outcome(code: Int, text: String, parse: (String) -> T): Result<T> = when {
+        code in 200..299 -> Result.Ok(parse(text))
+        code == 401 -> Result.NeedKey
+        code == 409 -> Result.AlreadyDecided
+        code == 404 -> Result.Failed("ربات این گوشی را نمی‌شناسد (آدرس عوض شده) یا نسخهٔ ربات قدیمی است. اتصال را از «بیشتر» قطع و با کد تازه دوباره وصل کنید.")
+        code == 403 -> Result.Failed("اشتراک فروشگاه فعال نیست.")
+        code == 429 -> Result.Failed("درخواست‌ها زیاد بود؛ یک دقیقهٔ دیگر دوباره امتحان کنید.")
+        else -> Result.Failed(
+            runCatching { JSONObject(text).optString("message") }.getOrNull()
+                ?.takeIf { m -> m.any { it in '\u0600'..'\u06FF' } }
+                ?: "ربات جواب نداد ($code)",
+        )
+    }
+
+    /** Halve until the photo fits a phone screen — a receipt photo can be 4000px tall. Pure. */
+    fun sampleSize(width: Int, height: Int, maxWidth: Int = 1080, maxHeight: Int = 1920): Int {
+        var sample = 1
+        while (width / sample > maxWidth || height / sample > maxHeight) sample *= 2
+        return sample
+    }
+
+    /** Parse the reasons endpoint's body. Pure: unit-tested. */
+    fun parseReasons(body: String): List<Reason> {
+        val arr = JSONObject(body).optJSONArray("reasons") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.map { Reason(it.optString("code"), it.optString("label")) }
+            .filter { it.code.isNotBlank() }
     }
 
     /** Parse the list endpoint's body. Pure: unit-tested. */
@@ -70,10 +108,7 @@ object Receipts {
 
     fun list(context: Context): Result<List<Receipt>> = call(context, "GET", "") { parseList(it) }
 
-    fun reasons(context: Context): Result<List<Reason>> = call(context, "GET", "/reasons") { body ->
-        val arr = JSONObject(body).optJSONArray("reasons")
-        (0 until (arr?.length() ?: 0)).mapNotNull { arr!!.optJSONObject(it) }.map { Reason(it.optString("code"), it.optString("label")) }
-    }
+    fun reasons(context: Context): Result<List<Reason>> = call(context, "GET", "/reasons") { parseReasons(it) }
 
     fun approve(context: Context, id: Long): Result<Unit> = call(context, "POST", "/$id/approve") { }
 
@@ -93,9 +128,12 @@ object Receipts {
                 // A phone photo of a receipt can be 4000px tall; a card on screen needs a tenth of it.
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                var sample = 1
-                while (bounds.outWidth / sample > 1200 || bounds.outHeight / sample > 2000) sample *= 2
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+                val sample = sampleSize(bounds.outWidth, bounds.outHeight)
+                // RGB_565: half the memory of ARGB for a photo that has no transparency.
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                })
             } finally {
                 con.disconnect()
             }
@@ -127,14 +165,7 @@ object Receipts {
                 }
                 val code = con.responseCode
                 val text = (if (code < 400) con.inputStream else con.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-                when {
-                    code in 200..299 -> Result.Ok(parse(text))
-                    code == 401 || code == 404 -> Result.NeedKey
-                    else -> Result.Failed(
-                        runCatching { JSONObject(text).optString("message") }.getOrNull()?.takeIf { it.isNotBlank() }
-                            ?: "ربات جواب نداد ($code)",
-                    )
-                }
+                outcome(code, text, parse)
             } finally {
                 con.disconnect()
             }
