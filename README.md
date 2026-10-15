@@ -35,6 +35,11 @@
 - **همیشه بیدار:** با یک اعلان کوچک ثابت در پس‌زمینه کار می‌کند تا گوشی آن را نخواباند. اگر گوشی قطع شود، ربات به شما خبر می‌دهد.
 - **بدون اینترنت هم چیزی گم نمی‌شود:** پیامک‌ها روی گوشی صف می‌شوند و با وصل شدن اینترنت فرستاده می‌شوند.
 - **اشتراک فروشگاه جلوی چشم:** سطح اشتراک جیرجیرک، تاریخ انقضا و تعداد رسیدهای در انتظار بررسی را از ربات می‌گیرد و نشان می‌دهد.
+- **تأیید و رد رسید از همین اپ:** رسیدهایی که خودکار تأیید نشده‌اند، با عکس رسید و دلیل ربات، در تب «رسیدها» می‌آیند و با یک لمس تأیید یا رد می‌شوند (با کد مدیریت جدا از ربات).
+- **اعلان «سفارش خودکار تأیید شد»** با مبلغ و نام مشتری، روی خود گوشی.
+- **ویجت صفحهٔ اصلی و حالت تاریک:** وضعیت در یک نگاه؛ ظاهر با حالت روز و شب گوشی عوض می‌شود.
+- **راهنمای قفل اجازهٔ پیامک اندروید ۱۳+** قدم‌به‌قدم، و **پیدا کردن خودکار شمارهٔ بانک** از پیامک‌های گوشی.
+- **پیامکی که ربات نتوانست بخواند** با یک لمس برای پشتیبانی فرستاده می‌شود تا بانک شما هم پشتیبانی شود.
 - **به‌روزرسانی خودکار:** نسخهٔ تازه را خودش پیدا می‌کند، در پس‌زمینه دانلود می‌کند و با یک اعلان خبر می‌دهد؛ شما فقط «نصب» را می‌زنید.
 
 ## تصاویر
@@ -86,6 +91,8 @@ Kotlin + Jetpack Compose, no third-party libraries. Persian RTL UI in Vazirmatn 
 | `Beat` | Allow-while-idle alarm every 5 min: flush, ping, check for updates |
 | `SyncJob` / `BootReceiver` | Network-bound retry job; re-arms everything after reboot or update |
 | `Inbox` | «انتخاب از پیامک‌ها»: groups inbox senders on screen (never sent) |
+| `Receipts` | «رسیدها»: list, image, approve / reject against the bot with the separate manage key (`X-Manage-Key`) |
+| `Alerts` / `StatusWidget` | Approval, low-battery and offline notifications (once each); the home-screen widget |
 | `Updates` / `SemVer` | Latest release from the bot's ping or the GitHub releases-page redirect (no API, no rate limit); DownloadManager + FileProvider hand the APK to the installer |
 | `ui/` | `App` (tabs), `Home` (status, subscription, setup, senders), `Report` (events by Jalali day, diagnostics), `More` (update, links, connection) |
 

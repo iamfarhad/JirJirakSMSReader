@@ -104,7 +104,7 @@ object Rules {
     }
 
     /** Words a bank's transaction SMS carries — used only to SUGGEST a sender, never to forward. */
-    private val BANKISH = listOf("مانده", "موجودی", "واریز", "برداشت", "انتقال", "حساب", "کارت", "مبلغ")
+    private val BANKISH = listOf("مانده", "موجودی", "واریز", "برداشت", "انتقال", "حساب", "کارت", "مبلغ", "بانک")
 
     fun looksLikeBank(body: String): Boolean = canon(body).let { b -> BANKISH.any { b.contains(it) } }
 

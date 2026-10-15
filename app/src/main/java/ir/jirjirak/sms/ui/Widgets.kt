@@ -185,6 +185,8 @@ object EventLook {
         val kind = e.optString("kind")
         val status = e.optString("status")
         return when {
+            // Delivered, but the bot could not read it: a new bank format, not a success.
+            kind == "sms" && status == "sent" && unreadable(e) -> Look(Icons.Filled.Warning, Brand.Warn, Brand.WarnSoft, "رسید ولی خوانده نشد")
             kind == "sms" && status == "sent" -> Look(Icons.Filled.Check, Brand.Good, Brand.GoodSoft, "فرستاده شد")
             kind == "sms" && status == "queued" -> Look(Icons.Filled.Refresh, Brand.Warn, Brand.WarnSoft, "در صف")
             kind == "sms" && status == "retry" -> Look(Icons.Filled.Refresh, Brand.Warn, Brand.WarnSoft, "تلاش دوباره")

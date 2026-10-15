@@ -159,7 +159,7 @@ private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.R
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text("🤖 امتیاز ربات: " + Persian.number(r.score) + " از " + Persian.number(r.threshold ?: 70) + " لازم", color = Brand.Ink, fontSize = 13.sp)
-                r.why.forEach { Text(it, color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp) }
+                r.why.forEach { Text(Persian.digits(it), color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp) }
             }
         }
         if (r.hasImage) {

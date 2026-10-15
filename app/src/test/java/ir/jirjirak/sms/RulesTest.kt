@@ -118,6 +118,7 @@ class RulesTest {
     fun `a bank-looking SMS can be suggested, a personal one is not`() {
         assertTrue(Rules.looksLikeBank("واریز 50,000 به حساب"))
         assertTrue("Arabic yeh", Rules.looksLikeBank("واريز 50,000"))
+        assertTrue("the bank's own name, in Arabic letters", Rules.looksLikeBank("بانك ملي ايران"))
         assertFalse(Rules.looksLikeBank("سلام، فردا میای؟"))
     }
 
