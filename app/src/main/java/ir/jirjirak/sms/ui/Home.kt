@@ -411,6 +411,7 @@ private fun ChecklistCard(store: Store, resumed: Int) {
         ) {
             if (smsAsked) openAppSettings(context) else askSms.launch(Manifest.permission.RECEIVE_SMS)
         }
+        if (smsAsked && !smsGranted) RestrictedGuide()
         HorizontalDivider(color = Brand.Line)
         CheckRow(
             state = if (notificationsOk) Step.Done else if (notificationsAsked) Step.Problem else Step.Todo,
@@ -471,6 +472,95 @@ private fun ChecklistCard(store: Store, resumed: Int) {
     }
 }
 
+/**
+ * Android 13+ refuses the SMS permission to an app installed from a file until «Allow restricted
+ * settings» — and says only «App was denied access», in English. Most sellers stopped there. The
+ * way through, in their words, with the one button that gets them to the right screen.
+ */
+@Composable
+private fun RestrictedGuide() {
+    val context = LocalContext.current
+    Column(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(Brand.WarnSoft).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("اندروید اجازهٔ پیامک را قفل کرده — این‌طوری بازش کنید:", color = Brand.Warn, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        listOf(
+            "دکمهٔ «باز کردن تنظیمات برنامه» را بزنید.",
+            "بالای صفحه، منوی ⋮ (سه نقطه) را بزنید و «Allow restricted settings» را انتخاب کنید. اگر نبود، یک بار «Permissions ← SMS» را بزنید تا پیغام «App was denied access» بیاید و «Close» کنید؛ حالا ⋮ آن گزینه را دارد.",
+            "با اثر انگشت یا رمز گوشی تأیید کنید.",
+            "«Permissions ← SMS ← Allow» را بزنید و به همین برنامه برگردید؛ تیک سبز می‌خورد.",
+        ).forEachIndexed { i, step ->
+            Row(verticalAlignment = Alignment.Top) {
+                Text(Persian.number(i + 1) + ".", color = Brand.Warn, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(step, color = Brand.Ink, fontSize = 13.sp, lineHeight = 20.sp)
+            }
+        }
+        Button(onClick = { openAppSettings(context) }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
+            Text("باز کردن تنظیمات برنامه")
+        }
+    }
+}
+
+/**
+ * «🔎 پیدا کردن خودکار»: read the inbox once (asking for READ_SMS if needed), and if exactly one
+ * sender looks like a bank, ask «is this yours?» — the commonest setup becomes one tap. Several:
+ * the picker. None: say so. Nothing read here leaves the phone.
+ */
+@Composable
+private fun FindBankSender(store: Store, onSeveral: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var found by remember { mutableStateOf<Inbox.Sender?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    fun scan() {
+        scope.launch {
+            val bankish = withContext(Dispatchers.IO) { Inbox.group(Inbox.read(context), store.senders) }.filter { it.bankish }
+            when (bankish.size) {
+                0 -> message = "در پیامک‌های گوشی پیامک بانکی پیدا نشد. اگر سیم‌کارت حساب در گوشی دیگری است، اپ را آنجا نصب کنید؛ وگرنه «نوشتن شماره» را بزنید."
+                1 -> found = bankish.first()
+                else -> onSeveral()
+            }
+        }
+    }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scan() else message = "بدون اجازهٔ خواندن پیامک، پیدا کردن خودکار ممکن نیست؛ «نوشتن شماره» را بزنید."
+    }
+
+    OutlinedButton(
+        onClick = {
+            message = null
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) scan()
+            else ask.launch(Manifest.permission.READ_SMS)
+        },
+        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+    ) { Text("🔎 پیدا کردن خودکار شمارهٔ بانک") }
+    message?.let { Text(it, color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp) }
+
+    found?.let { s ->
+        AlertDialog(
+            onDismissRequest = { found = null },
+            title = { Text("شمارهٔ بانک شما؟") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("شمارهٔ پیامک بانک شما «" + Persian.sender(s.from) + "» است؟", lineHeight = 22.sp)
+                    s.preview?.let { Text(Persian.digits(it), color = Brand.Muted, fontSize = 12.sp, maxLines = 2) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    store.addSender(s.from)
+                    store.event("system", "info", "شمارهٔ " + s.from + " مجاز شد")
+                    found = null
+                }) { Text("بله، مجاز کن") }
+            },
+            dismissButton = { TextButton(onClick = { found = null; onSeveral() }) { Text("نه، از فهرست انتخاب می‌کنم") } },
+        )
+    }
+}
+
 private fun openAppSettings(context: android.content.Context) {
     runCatching {
         context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName)))
@@ -496,7 +586,8 @@ private fun SendersCard(store: Store) {
             color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp,
         )
         if (senders.isEmpty()) {
-            Notice("هنوز شماره‌ای اضافه نکرده‌اید. شمارهٔ پیامک بانک معمولاً در فهرست «انتخاب از پیامک‌ها» با 🏦 نشان داده می‌شود.", Brand.WarnSoft, Brand.Warn)
+            Notice("هنوز شماره‌ای اضافه نکرده‌اید. «🔎 پیدا کردن خودکار» پیامک‌های گوشی را می‌گردد و شمارهٔ بانک را پیشنهاد می‌دهد.", Brand.WarnSoft, Brand.Warn)
+            FindBankSender(store, onSeveral = { picking = true })
         }
         senders.forEach { s ->
             Row(

@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
         const val TAB_HOME = 0
         const val TAB_REPORT = 1
         const val TAB_MORE = 2
+        const val TAB_RECEIPTS = 3
     }
 
     /** Bumped on every return to the app, so the screen re-reads permissions and status. */

@@ -25,6 +25,7 @@ class Beat : BroadcastReceiver() {
             try {
                 Net.flush(context)
                 Net.ping(context)
+                Alerts.check(context)
                 Updates.checkInBackground(context)
             } finally {
                 pending.finish()

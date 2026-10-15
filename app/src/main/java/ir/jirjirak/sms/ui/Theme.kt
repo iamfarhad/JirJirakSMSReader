@@ -5,7 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
@@ -18,22 +23,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ir.jirjirak.sms.R
 
-/** Jirjirak's own palette: a cricket's green on a light, calm surface. */
+/**
+ * Jirjirak's own palette: a cricket's green on a light, calm surface — or on a deep green-black at
+ * night, following the phone. Every colour reads [dark], which is Compose state, so a screen
+ * redraws the moment the phone switches; many sellers leave this app open on a desk overnight.
+ */
 object Brand {
-    val Green = Color(0xFF16A34A)
-    val GreenDark = Color(0xFF166534)
-    val GreenSoft = Color(0xFFDCFCE7)
-    val Canvas = Color(0xFFF2FAF5)
+    var dark by mutableStateOf(false)
+
+    private fun pick(light: Long, night: Long) = Color(if (dark) night else light)
+
+    val Green get() = pick(0xFF16A34A, 0xFF22C55E)
+    val GreenDark get() = pick(0xFF166534, 0xFF86EFAC)
+    val GreenSoft get() = pick(0xFFDCFCE7, 0xFF14351F)
+    val Canvas get() = pick(0xFFF2FAF5, 0xFF0B1410)
+    /** Cards, the tab bar, dialogs. */
+    val Surface get() = pick(0xFFFFFFFF, 0xFF13201A)
     /** Dividers and the ring of a step not yet done. */
-    val Line = Color(0xFFE3EDE7)
-    val Ink = Color(0xFF14231A)
-    val Muted = Color(0xFF5F7166)
-    val Good = Color(0xFF1F9D57)
-    val GoodSoft = Color(0xFFE5F6EC)
-    val Warn = Color(0xFFB7791F)
-    val WarnSoft = Color(0xFFFFF4DE)
-    val Bad = Color(0xFFD64545)
-    val BadSoft = Color(0xFFFDE8E8)
+    val Line get() = pick(0xFFE3EDE7, 0xFF24342B)
+    val Ink get() = pick(0xFF14231A, 0xFFE6F1EA)
+    val Muted get() = pick(0xFF5F7166, 0xFF94A89C)
+    val Good get() = pick(0xFF1F9D57, 0xFF4ADE80)
+    val GoodSoft get() = pick(0xFFE5F6EC, 0xFF143022)
+    val Warn get() = pick(0xFFB7791F, 0xFFF5B94A)
+    val WarnSoft get() = pick(0xFFFFF4DE, 0xFF33280F)
+    val Bad get() = pick(0xFFD64545, 0xFFF87171)
+    val BadSoft get() = pick(0xFFFDE8E8, 0xFF3A1717)
 }
 
 val Vazirmatn = FontFamily(
@@ -45,15 +60,18 @@ val Vazirmatn = FontFamily(
 
 @Composable
 fun JirjirakTheme(content: @Composable () -> Unit) {
+    Brand.dark = isSystemInDarkTheme()
+    val base = if (Brand.dark) darkColorScheme() else lightColorScheme()
     MaterialTheme(
-        colorScheme = lightColorScheme(
+        colorScheme = base.copy(
             primary = Brand.Green,
             onPrimary = Color.White,
             primaryContainer = Brand.GreenSoft,
             onPrimaryContainer = Brand.GreenDark,
             background = Brand.Canvas,
             onBackground = Brand.Ink,
-            surface = Color.White,
+            surface = Brand.Surface,
+            surfaceContainerHigh = Brand.Surface,
             onSurface = Brand.Ink,
             onSurfaceVariant = Brand.Muted,
             error = Brand.Bad,

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_surface">#FFFFFF</color>
+    <color name="widget_ink">#14231A</color>
+    <color name="widget_muted">#5F7166</color>
+</resources>

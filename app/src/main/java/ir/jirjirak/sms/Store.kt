@@ -68,7 +68,7 @@ class Store(context: Context) {
     fun unpair() = synchronized(LOCK) {
         commit(
             prefs.edit().remove("endpoint").remove("shop").remove("shop_info").remove("queue")
-                .remove("last_error").remove("latest_from_bot"),
+                .remove("last_error").remove("latest_from_bot").remove("manage_key"),
         )
     }
 
@@ -117,6 +117,25 @@ class Store(context: Context) {
     var lastError: String?
         get() = prefs.getString("last_error", null)
         set(v) = commit(prefs.edit().putString("last_error", v))
+
+    /** Told once each (Alerts) until the battery recovers / the bot answers again. */
+    var batteryWarned: Boolean
+        get() = prefs.getBoolean("battery_warned", false)
+        set(v) = commit(prefs.edit().putBoolean("battery_warned", v))
+
+    var offlineWarned: Boolean
+        get() = prefs.getBoolean("offline_warned", false)
+        set(v) = commit(prefs.edit().putBoolean("offline_warned", v))
+
+    /** The bot's second key, for deciding receipts from the app («رسیدها»). Null until pasted. */
+    var manageKey: String?
+        get() = prefs.getString("manage_key", null)
+        set(v) = commit(prefs.edit().putString("manage_key", v))
+
+    /** Asked once after pairing whether the inbox's one bank sender is theirs; never again. */
+    var senderSuggested: Boolean
+        get() = prefs.getBoolean("sender_suggested", false)
+        set(v) = commit(prefs.edit().putBoolean("sender_suggested", v))
 
     /** The seller said they switched on the vendor's «Autostart» — the phone has no way to tell us. */
     var autostartConfirmed: Boolean
@@ -183,7 +202,7 @@ class Store(context: Context) {
                 .put("kind", kind).put("status", status).put("title", title)
             if (detail != null) row.put("detail", detail)
             if (from != null) row.put("from", from)
-            if (body != null) row.put("body", body.replace('\n', ' ').take(160))
+            if (body != null) row.put("body", body.take(600))
             val items = listOf(row) + events()
             commit(prefs.edit().putString("events", JSONArray(items.take(EVENTS_MAX)).toString()))
         }

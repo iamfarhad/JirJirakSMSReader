@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
@@ -94,7 +95,7 @@ fun App(resumed: Int, wantedTab: Int) {
         containerColor = Brand.Canvas,
         bottomBar = {
             if (paired) {
-                NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+                NavigationBar(containerColor = Brand.Surface, tonalElevation = 0.dp) {
                     val colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = Brand.GreenDark, selectedTextColor = Brand.GreenDark,
                         indicatorColor = Brand.GreenSoft, unselectedIconColor = Brand.Muted, unselectedTextColor = Brand.Muted,
@@ -102,6 +103,10 @@ fun App(resumed: Int, wantedTab: Int) {
                     NavigationBarItem(
                         selected = tab == MainActivity.TAB_HOME, onClick = { tab = MainActivity.TAB_HOME }, colors = colors,
                         icon = { Icon(Icons.Filled.Home, contentDescription = null) }, label = { Text("خانه") },
+                    )
+                    NavigationBarItem(
+                        selected = tab == MainActivity.TAB_RECEIPTS, onClick = { tab = MainActivity.TAB_RECEIPTS }, colors = colors,
+                        icon = { Icon(Icons.Filled.Check, contentDescription = null) }, label = { Text("رسیدها") },
                     )
                     NavigationBarItem(
                         selected = tab == MainActivity.TAB_REPORT, onClick = { tab = MainActivity.TAB_REPORT }, colors = colors,
@@ -128,6 +133,7 @@ fun App(resumed: Int, wantedTab: Int) {
             when {
                 !paired -> PairScreen(store)
                 tab == MainActivity.TAB_REPORT -> ReportTab(store, now)
+                tab == MainActivity.TAB_RECEIPTS -> ReceiptsTab(store, now)
                 tab == MainActivity.TAB_MORE -> MoreTab(store, now)
                 else -> HomeTab(store, now, resumed, onReport = { tab = MainActivity.TAB_REPORT }, onMore = { tab = MainActivity.TAB_MORE })
             }
@@ -144,7 +150,7 @@ private fun Header(shop: String?) {
                 .size(50.dp)
                 .shadow(10.dp, RoundedCornerShape(16.dp), spotColor = Brand.Green.copy(alpha = 0.5f))
                 .clip(RoundedCornerShape(16.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF22C55E), Brand.Green, Brand.GreenDark))),
+                .background(Brush.linearGradient(listOf(Color(0xFF22C55E), Color(0xFF16A34A), Color(0xFF166534)))),
             contentAlignment = Alignment.Center,
         ) {
             Image(painterResource(R.drawable.ic_cricket), contentDescription = null, modifier = Modifier.size(50.dp))

@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,7 +67,7 @@ fun Section(
     content: @Composable () -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = Brand.Surface),
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
@@ -119,7 +120,7 @@ fun Pill(text: String, background: Color, color: Color) {
 @Composable
 fun StatTile(label: String, value: String, modifier: Modifier = Modifier, tint: Color = Brand.Ink) {
     Column(
-        modifier.clip(MaterialTheme.shapes.small).background(Color.White.copy(alpha = 0.7f)).padding(horizontal = 10.dp, vertical = 8.dp),
+        modifier.clip(MaterialTheme.shapes.small).background(Brand.Surface.copy(alpha = 0.7f)).padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Text(label, color = Brand.Muted, fontSize = 11.sp)
         Text(value, color = tint, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -232,6 +233,14 @@ fun EventRow(e: JSONObject, expanded: Boolean, onClick: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Brand.Canvas).padding(10.dp),
                     )
                 }
+                // A bank format the bot cannot read yet is fixed from exactly this text: one tap
+                // sends it to Jirjirak's support instead of the seller copying it out by hand.
+                if (body != null && unreadable(e)) {
+                    val context = LocalContext.current
+                    TextButton(onClick = { shareForSupport(context, e.optString("from"), body) }) {
+                        Text("📤 ارسال این پیامک برای پشتیبانی جیرجیرک", fontSize = 13.sp)
+                    }
+                }
                 if (expanded) {
                     Text(Persian.date(e.optLong("at")) + "، " + Persian.clock(e.optLong("at")), color = Brand.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
                 }
@@ -240,6 +249,21 @@ fun EventRow(e: JSONObject, expanded: Boolean, onClick: () -> Unit) {
                 Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Brand.Line, modifier = Modifier.size(18.dp))
             }
         }
+    }
+}
+
+/** The bot said it could not read the amount: a new bank format, worth sending to support. */
+fun unreadable(e: JSONObject): Boolean =
+    e.optString("kind") == "sms" && e.optString("verdict").contains("نتوانست")
+
+/** Telegram's share sheet with the SMS, so the seller only picks @JirjirakPremiumBot (or any chat). */
+fun shareForSupport(context: android.content.Context, from: String, body: String) {
+    val text = "پیامک بانک که ربات جیرجیرک نتوانست بخواند (برای پشتیبانی):\nفرستنده: $from\n\n$body"
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text)
+    val telegram = android.content.Intent(send).setPackage("org.telegram.messenger")
+    val chooser = android.content.Intent.createChooser(send, "ارسال برای پشتیبانی").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (runCatching { context.startActivity(telegram.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isFailure) {
+        runCatching { context.startActivity(chooser) }
     }
 }
 

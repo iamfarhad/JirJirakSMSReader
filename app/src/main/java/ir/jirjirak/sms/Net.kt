@@ -112,8 +112,17 @@ object Net {
             store.lastSent = System.currentTimeMillis()
             store.lastError = null
             sent++
+            approval(reply.body)?.let { (amount, customer) -> Alerts.approved(context, amount, customer) }
         }
+        StatusWidget.refresh(context)
         return sent
+    }
+
+    /** Amount and customer when the bot's reply says the order was approved; null otherwise. Pure. */
+    fun approval(body: String): Pair<Long, String?>? {
+        val j = runCatching { JSONObject(body) }.getOrNull() ?: return null
+        if (!j.optBoolean("approved")) return null
+        return j.optLong("amount", 0) to j.optString("customer").takeIf { it.isNotBlank() && it != "null" }
     }
 
     /**
@@ -188,6 +197,7 @@ object Net {
             store.shopInfo = info
             store.lastPing = System.currentTimeMillis()
             store.lastError = null
+            StatusWidget.refresh(context)
         }
         return Ping.OK
     }
