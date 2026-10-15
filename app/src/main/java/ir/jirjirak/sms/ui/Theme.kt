@@ -34,22 +34,25 @@ object Brand {
 
     private fun pick(light: Long, night: Long) = Color(if (dark) night else light)
 
-    val Green get() = pick(0xFF16A34A, 0xFF22C55E)
-    val GreenDark get() = pick(0xFF166534, 0xFF86EFAC)
-    val GreenSoft get() = pick(0xFFDCFCE7, 0xFF14351F)
-    val Canvas get() = pick(0xFFF2FAF5, 0xFF0B1410)
+    val Green get() = pick(0xFF059669, 0xFF34D399)
+    val Emerald get() = pick(0xFF10B981, 0xFF10B981)
+    val GreenDark get() = pick(0xFF047857, 0xFF6EE7B7)
+    val GreenSoft get() = pick(0xFFE9FAF2, 0xFF0F2E24)
+    val Canvas get() = pick(0xFFF7F9FC, 0xFF0B1220)
     /** Cards, the tab bar, dialogs. */
-    val Surface get() = pick(0xFFFFFFFF, 0xFF13201A)
+    val Surface get() = pick(0xFFFFFFFF, 0xFF131C2E)
     /** Dividers and the ring of a step not yet done. */
-    val Line get() = pick(0xFFE3EDE7, 0xFF24342B)
-    val Ink get() = pick(0xFF14231A, 0xFFE6F1EA)
-    val Muted get() = pick(0xFF5F7166, 0xFF94A89C)
-    val Good get() = pick(0xFF1F9D57, 0xFF4ADE80)
-    val GoodSoft get() = pick(0xFFE5F6EC, 0xFF143022)
-    val Warn get() = pick(0xFFB7791F, 0xFFF5B94A)
-    val WarnSoft get() = pick(0xFFFFF4DE, 0xFF33280F)
-    val Bad get() = pick(0xFFD64545, 0xFFF87171)
-    val BadSoft get() = pick(0xFFFDE8E8, 0xFF3A1717)
+    val Line get() = pick(0xFFE8EDF3, 0xFF22304A)
+    val Ink get() = pick(0xFF11243E, 0xFFE6EDF7)
+    val Muted get() = pick(0xFF64748B, 0xFF94A3B8)
+    val Good get() = pick(0xFF059669, 0xFF34D399)
+    val GoodSoft get() = pick(0xFFE9FAF2, 0xFF0F2E24)
+    val Warn get() = pick(0xFFD97706, 0xFFFBBF24)
+    val WarnSoft get() = pick(0xFFFFF4E0, 0xFF33270C)
+    val Bad get() = pick(0xFFEF4444, 0xFFF87171)
+    val BadSoft get() = pick(0xFFFEECEC, 0xFF3A1717)
+    val Blue get() = pick(0xFF2563EB, 0xFF60A5FA)
+    val BlueSoft get() = pick(0xFFEAF1FE, 0xFF13233F)
 }
 
 val Vazirmatn = FontFamily(
@@ -76,7 +79,7 @@ fun JirjirakTheme(content: @Composable () -> Unit) {
     val dark = Brand.dark
     androidx.compose.runtime.SideEffect {
         val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
-        val bar = if (dark) 0xFF0B1410.toInt() else 0xFFF2FAF5.toInt()
+        val bar = if (dark) 0xFF0B1220.toInt() else 0xFFF7F9FC.toInt()
         @Suppress("DEPRECATION")
         window.statusBarColor = bar
         @Suppress("DEPRECATION")

@@ -2,9 +2,9 @@
 <!-- The phone is in dark mode: the bars and the first frame match Brand's night canvas. -->
 <resources>
     <style name="Theme.Jirjirak" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">#0B1410</item>
+        <item name="android:statusBarColor">#0B1220</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:navigationBarColor">#0B1410</item>
-        <item name="android:windowBackground">#0B1410</item>
+        <item name="android:navigationBarColor">#0B1220</item>
+        <item name="android:windowBackground">#0B1220</item>
     </style>
 </resources>

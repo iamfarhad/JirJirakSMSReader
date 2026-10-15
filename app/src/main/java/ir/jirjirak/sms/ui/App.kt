@@ -76,6 +76,8 @@ fun App(resumed: Int, wantedTab: Int, tabRequest: Int = 0) {
     LaunchedEffect(resumed) { now = System.currentTimeMillis() }
 
     var tab by rememberSaveable { mutableIntStateOf(wantedTab) }
+    // Which filter «رسیدها» opens on when the dashboard sends the seller there.
+    var receiptsFilter by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(wantedTab, tabRequest) { tab = wantedTab }
 
     LaunchedEffect(Unit) {
@@ -133,9 +135,9 @@ fun App(resumed: Int, wantedTab: Int, tabRequest: Int = 0) {
             when {
                 !paired -> PairScreen(store)
                 tab == MainActivity.TAB_REPORT -> ReportTab(store, now)
-                tab == MainActivity.TAB_RECEIPTS -> ReceiptsTab(store, now)
-                tab == MainActivity.TAB_MORE -> MoreTab(store, now)
-                else -> HomeTab(store, now, resumed, onReport = { tab = MainActivity.TAB_REPORT }, onMore = { tab = MainActivity.TAB_MORE })
+                tab == MainActivity.TAB_RECEIPTS -> ReceiptsTab(store, now, receiptsFilter) { receiptsFilter = it }
+                tab == MainActivity.TAB_MORE -> MoreTab(store, now) { t, f -> receiptsFilter = f; tab = t }
+                else -> HomeTab(store, now, resumed) { t, f -> receiptsFilter = f; tab = t }
             }
             Spacer(Modifier.size(4.dp))
         }

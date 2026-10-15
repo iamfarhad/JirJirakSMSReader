@@ -1,6 +1,21 @@
 package ir.jirjirak.sms.ui
 
 import android.os.Build
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
+import ir.jirjirak.sms.MainActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,13 +66,132 @@ import kotlinx.coroutines.withContext
 
 /** «بیشتر»: the update, Jirjirak's places, this connection, and the way out. */
 @Composable
-fun MoreTab(store: Store, now: Long) {
+fun MoreTab(store: Store, now: Long, onNavigate: (tab: Int, filter: Int) -> Unit) {
     watchStore()
+    ShopProfileCard(store, now)
+    QuickActions(store, now, onNavigate)
+    SubscriptionCard(store, now) {}
+    SecurityCard(store)
     UpdateCard(store, now)
     AppearanceCard(store)
     JirjirakCard()
     ConnectionCard(store)
     VersionLine()
+}
+
+// ── the shop, at a glance ───────────────────────────────────────────────
+
+/** Whose phone this is working for — names only: no pairing code, no key, ever. */
+@Composable
+private fun ShopProfileCard(store: Store, now: Long) {
+    val alive = store.lastPing > 0 && now - store.lastPing < 30 * 60_000L
+    AppCard {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            IconChip(Icons.Filled.Home, Tone.good, 52)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(store.shop ?: "فروشگاه", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1)
+                Text(store.server?.let { Persian.latin(it) } ?: "—", color = Brand.Muted, fontSize = 12.sp, maxLines = 1)
+            }
+            StatusBadge(if (alive) "متصل" else "بی‌خبر", if (alive) Tone.good else Tone.warn)
+        }
+        Text(
+            "آخرین ارتباط با ربات: " + Persian.ago(store.lastPing, now) + " · آخرین پیامک: " + Persian.ago(store.lastSent, now),
+            color = Brand.Muted, fontSize = 12.sp,
+        )
+    }
+}
+
+@Composable
+private fun QuickActions(store: Store, now: Long, onNavigate: (Int, Int) -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    AppCard {
+        SectionHeader("دسترسی سریع")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            QuickTile("رسیدهای منتظر", Icons.Filled.DateRange, Tone.warn, Modifier.weight(1f)) { onNavigate(MainActivity.TAB_RECEIPTS, 1) }
+            QuickTile("مغایرت‌ها", Icons.Filled.Warning, Tone.bad, Modifier.weight(1f)) { onNavigate(MainActivity.TAB_RECEIPTS, 3) }
+            QuickTile("گزارش‌ها", Icons.Filled.Info, Tone.info, Modifier.weight(1f)) { onNavigate(MainActivity.TAB_REPORT, 0) }
+            QuickTile(if (copied) "کپی شد ✓" else "گزارش پشتیبانی", Icons.Filled.Share, Tone.muted, Modifier.weight(1f)) {
+                clipboard.setText(AnnotatedString(diagnostics(context, store, now)))
+                copied = true
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickTile(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tone: Tone, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, Brand.Line, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        IconChip(icon, tone, 36)
+        Text(label, color = Brand.Ink, fontSize = 11.sp, maxLines = 2, lineHeight = 14.sp, textAlign = TextAlign.Center)
+    }
+}
+
+// ── keys on this phone ──────────────────────────────────────────────────
+
+/**
+ * What this phone can do on the shop's behalf. Says whether a key is held — never the key itself,
+ * which would turn a screenshot sent to support into the power to approve payments.
+ */
+@Composable
+private fun SecurityCard(store: Store) {
+    watchStore()
+    var forgetting by remember { mutableStateOf(false) }
+    AppCard {
+        SectionHeader("امنیت و دسترسی‌ها")
+        SecurityRow("ارسال پیامک‌های بانکی", if (store.endpoint != null) "فعال" else "وصل نیست", store.endpoint != null)
+        SecurityRow(
+            "تأیید و رد رسید از اپ",
+            when {
+                store.manageKey != null -> "کد مدیریت ثبت شده"
+                store.manageKeyRevoked -> "کد باطل شده"
+                else -> "ثبت نشده"
+            },
+            store.manageKey != null,
+        )
+        Text(
+            "کدها روی همین گوشی می‌مانند و جایی نمایش داده نمی‌شوند. اگر گوشی را به کسی می‌دهید، کد مدیریت را پاک کنید؛ ارسال پیامک‌ها ادامه پیدا می‌کند.",
+            color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp,
+        )
+        if (store.manageKey != null) {
+            OutlinedButton(
+                onClick = { forgetting = true }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Brand.Bad), border = dangerBorder(),
+            ) { Text("پاک کردن کد مدیریت از این گوشی") }
+        }
+    }
+    if (forgetting) {
+        AlertDialog(
+            onDismissRequest = { forgetting = false },
+            title = { Text("پاک کردن کد مدیریت") },
+            text = { Text("بعد از این، رسیدها را از این گوشی نمی‌توان تأیید یا رد کرد تا دوباره کد را از ربات بگیرید. ارسال پیامک‌ها قطع نمی‌شود.", lineHeight = 22.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    store.manageKey = null
+                    store.manageKeyRevoked = false
+                    store.event("system", "info", "کد مدیریت رسیدها از این گوشی پاک شد")
+                    forgetting = false
+                }) { Text("پاک کن", color = Brand.Bad) }
+            },
+            dismissButton = { TextButton(onClick = { forgetting = false }) { Text("انصراف") } },
+        )
+    }
+}
+
+@Composable
+private fun SecurityRow(label: String, state: String, ok: Boolean) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Icon(if (ok) Icons.Filled.Lock else Icons.Filled.Warning, contentDescription = null, tint = if (ok) Brand.Good else Brand.Muted, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = Brand.Ink, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        StatusBadge(state, if (ok) Tone.good else Tone.muted)
+    }
 }
 
 // ── updates ─────────────────────────────────────────────────────────────

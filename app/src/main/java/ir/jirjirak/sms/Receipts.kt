@@ -108,6 +108,160 @@ object Receipts {
 
     fun list(context: Context): Result<List<Receipt>> = call(context, "GET", "") { parseList(it) }
 
+    // ── the dashboard, the receipts centre, a receipt's detail ──────────
+
+    data class Metrics(
+        val autoApproved: Int = 0,
+        val manualApproved: Int = 0,
+        val rejected: Int = 0,
+        val needsReview: Int = 0,
+        val depositsCount: Int = 0,
+        val depositsTotal: Long = 0,
+        val unmatched: Int = 0,
+        val autoRate: Int = 0,
+        val avgAutoSeconds: Int = 0,
+    )
+
+    data class Action(val kind: String, val count: Int, val title: String, val hint: String)
+
+    data class Activity(val kind: String, val at: Long, val amount: Long, val customer: String?, val sender: String?, val id: Long)
+
+    data class Day(val date: String, val auto: Int, val manual: Int, val total: Long)
+
+    data class Bank(val sender: String, val count: Int, val total: Long)
+
+    data class Summary(
+        val autoOn: Boolean,
+        val levelLabel: String,
+        val metrics: Metrics,
+        val previous: Metrics,
+        val actions: List<Action>,
+        val recent: List<Activity>,
+        val series: List<Day>,
+        val banks: List<Bank>,
+    )
+
+    /** One row of the receipts centre: a receipt (a payment) or, under «مغایرت», a bank deposit. */
+    data class Item(
+        val id: Long,
+        val isDeposit: Boolean,
+        val state: String,
+        val via: String?,
+        val amount: Long?,
+        val customer: String?,
+        val title: String?,
+        val tracking: String?,
+        val rail: String?,
+        val sender: String?,
+        val at: Long,
+        val reason: String?,
+        val score: Int?,
+        val threshold: Int?,
+        val hasImage: Boolean,
+        val note: String?,
+    )
+
+    data class Page(val items: List<Item>, val hasMore: Boolean)
+
+    data class Signal(val label: String, val ok: Boolean, val weight: Int, val earned: Int)
+
+    data class Detail(
+        val item: Item,
+        val deposit: Item?,
+        val score: Int?,
+        val threshold: Int?,
+        val enough: Boolean,
+        val signals: List<Signal>,
+        val why: List<String>,
+        val suggestionTone: String,
+        val suggestionTitle: String,
+        val suggestionText: String?,
+        val timeline: List<Pair<Long, Pair<String, String>>>,
+    )
+
+    private fun JSONObject.str(key: String): String? = optString(key).takeIf { it.isNotBlank() && it != "null" && !isNull(key) }
+
+    private fun metrics(o: JSONObject?): Metrics = if (o == null) Metrics() else Metrics(
+        autoApproved = o.optInt("auto_approved"), manualApproved = o.optInt("manual_approved"), rejected = o.optInt("rejected"),
+        needsReview = o.optInt("needs_review"), depositsCount = o.optInt("deposits_count"), depositsTotal = o.optLong("deposits_total"),
+        unmatched = o.optInt("unmatched"), autoRate = o.optInt("auto_rate"), avgAutoSeconds = o.optInt("avg_auto_seconds"),
+    )
+
+    private fun <T> JSONObject.list(key: String, map: (JSONObject) -> T): List<T> {
+        val a = optJSONArray(key) ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map(map)
+    }
+
+    /** Parse `…/receipts/summary`. Pure: unit-tested. */
+    fun parseSummary(body: String): Summary {
+        val o = JSONObject(body)
+        return Summary(
+            autoOn = o.optBoolean("auto_on"),
+            levelLabel = o.optJSONObject("level")?.str("label") ?: "",
+            metrics = metrics(o.optJSONObject("metrics")),
+            previous = metrics(o.optJSONObject("previous")),
+            actions = o.list("actions") { Action(it.optString("kind"), it.optInt("count"), it.optString("title"), it.optString("hint")) },
+            recent = o.list("recent") { Activity(it.optString("kind"), it.optLong("at") * 1000, it.optLong("amount"), it.str("customer"), it.str("sender"), it.optLong("id")) },
+            series = o.list("series") { Day(it.optString("date"), it.optInt("auto"), it.optInt("manual"), it.optLong("total")) },
+            banks = o.list("banks") { Bank(it.optString("sender"), it.optInt("count"), it.optLong("total")) },
+        )
+    }
+
+    private fun item(o: JSONObject): Item {
+        val deposit = o.optString("kind") == "deposit"
+        val auto = o.optJSONObject("auto")
+        return Item(
+            id = o.optLong("id"),
+            isDeposit = deposit,
+            state = o.optString("state"),
+            via = o.str("via"),
+            amount = if (o.isNull("amount")) null else o.optLong("amount"),
+            customer = o.str("customer"),
+            title = o.str("title"),
+            tracking = o.str("tracking"),
+            rail = o.str("rail"),
+            sender = o.str("sender"),
+            at = (if (deposit) o.optLong("created_at") else o.optLong("created_at")) * 1000,
+            reason = o.str("reason") ?: o.str("note"),
+            score = auto?.optInt("score"),
+            threshold = auto?.optInt("threshold"),
+            hasImage = o.optBoolean("has_image"),
+            note = o.str("note"),
+        )
+    }
+
+    /** Parse `…/receipts/history`. Pure: unit-tested. */
+    fun parsePage(body: String): Page {
+        val o = JSONObject(body)
+        return Page(o.list("items") { item(it) }, o.optBoolean("has_more"))
+    }
+
+    /** Parse `…/receipts/{id}`. Pure: unit-tested. */
+    fun parseDetail(body: String): Detail {
+        val o = JSONObject(body)
+        val a = o.optJSONObject("analysis")
+        val sug = o.optJSONObject("suggestion")
+        return Detail(
+            item = item(o.optJSONObject("receipt") ?: JSONObject()),
+            deposit = o.optJSONObject("deposit")?.let { item(it.put("kind", "deposit")) },
+            score = a?.optInt("score"),
+            threshold = a?.optInt("threshold"),
+            enough = a?.optBoolean("enough") ?: false,
+            signals = a?.list("signals") { Signal(it.optString("label"), it.optBoolean("ok"), it.optInt("weight"), it.optInt("earned")) } ?: emptyList(),
+            why = a?.optJSONArray("why")?.let { arr -> (0 until arr.length()).map { arr.optString(it) } } ?: emptyList(),
+            suggestionTone = sug?.optString("tone") ?: "info",
+            suggestionTitle = sug?.optString("title") ?: "",
+            suggestionText = sug?.str("text"),
+            timeline = o.list("timeline") { (it.optLong("at") * 1000) to (it.optString("title") to it.optString("tone")) },
+        )
+    }
+
+    fun summary(context: Context, range: String = "today"): Result<Summary> = call(context, "GET", "/summary?range=$range") { parseSummary(it) }
+
+    fun history(context: Context, filter: String, page: Int): Result<Page> = call(context, "GET", "/history?filter=$filter&page=$page") { parsePage(it) }
+
+    fun detail(context: Context, id: Long): Result<Detail> = call(context, "GET", "/$id") { parseDetail(it) }
+
     fun reasons(context: Context): Result<List<Reason>> = call(context, "GET", "/reasons") { parseReasons(it) }
 
     fun approve(context: Context, id: Long): Result<Unit> = call(context, "POST", "/$id/approve") { }

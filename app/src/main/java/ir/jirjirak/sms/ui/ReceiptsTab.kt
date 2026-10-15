@@ -1,6 +1,8 @@
 package ir.jirjirak.sms.ui
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,19 +10,29 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,9 +44,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,81 +67,216 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** «رسیدها»: what waits for the seller, with the receipt photo and the bot's reasoning, decided here. */
+private val FILTERS = listOf("all" to "همه", "pending" to "نیازمند بررسی", "approved" to "تأیید شده", "mismatch" to "مغایرت")
+
+/**
+ * «رسیدها» — the receipts centre: the week in four figures, a filter, the receipts themselves
+ * (waiting first), and a receipt's own page to decide it on. Nothing here is computed on the
+ * phone: the figures, the score and the decision are the bot's.
+ */
 @Composable
-fun ReceiptsTab(store: Store, now: Long) {
+fun ReceiptsTab(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit) {
     watchStore()
-    // The key lives in the Store and nowhere else: a refused key is cleared there, so pasting a new
-    // one redraws this tab straight into the list. (A remembered «needKey» flag outlived the paste
-    // and kept the seller on the «paste the key» card.)
     if (store.manageKey == null) {
         ManageKeyCard(store, revoked = store.manageKeyRevoked)
         return
     }
+    var open by rememberSaveable { mutableStateOf<Long?>(null) }
+    var refreshTick by remember { mutableIntStateOf(0) }
 
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var receipts by remember { mutableStateOf<List<Receipts.Receipt>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    var reasons by remember { mutableStateOf<List<Receipts.Reason>>(emptyList()) }
-
-    fun load() {
-        loading = true
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { Receipts.list(context.applicationContext) }
-            loading = false
-            when (r) {
-                is Receipts.Result.Ok -> { receipts = r.value; error = null }
-                Receipts.Result.NeedKey -> store.revokeManageKey()
-                Receipts.Result.AlreadyDecided -> load()
-                is Receipts.Result.Failed -> error = r.message
-            }
-            if (reasons.isEmpty()) {
-                (withContext(Dispatchers.IO) { Receipts.reasons(context.applicationContext) } as? Receipts.Result.Ok)?.let { reasons = it.value }
+    AnimatedContent(targetState = open, label = "receipt") { id ->
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (id != null) {
+                BackHandler { open = null }
+                ReceiptDetailScreen(store, id, now, onBack = { open = null }, onDecided = { refreshTick++ })
+            } else {
+                ReceiptsCentre(store, now, filter, onFilter, refreshTick) { open = it }
             }
         }
-    }
-    LaunchedEffect(store.manageKey) { load() }
-
-    Section(
-        "رسیدهای در انتظار", Icons.Filled.Check,
-        trailing = {
-            if (loading) CircularProgressIndicator(Modifier.padding(4.dp), strokeWidth = 2.dp, color = Brand.Green)
-            else IconButton(onClick = { load() }) { Icon(Icons.Filled.Refresh, contentDescription = "تازه کردن", tint = Brand.Green) }
-        },
-    ) {
-        error?.let { Notice(it, Brand.BadSoft, Brand.Bad) }
-        when {
-            receipts == null && error == null -> Text("در حال دریافت…", color = Brand.Muted, fontSize = 13.sp)
-            receipts?.isEmpty() == true -> Text("🎉 رسیدی در انتظار بررسی نیست. هر رسیدی که خودکار تأیید نشود، اینجا می‌آید.", color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp)
-        }
-    }
-    receipts?.forEach { r ->
-        ReceiptCard(r, now, reasons, onDecided = { message ->
-            receipts = receipts?.filter { it.id != r.id }
-            message?.let { store.event("system", "ok", it) }
-        }, onKeyRefused = { store.revokeManageKey() })
     }
 }
 
 @Composable
-private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.Reason>, onDecided: (String?) -> Unit, onKeyRefused: () -> Unit) {
+private fun ReceiptsCentre(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit, refreshTick: Int, onOpen: (Long) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var image by remember(r.id) { mutableStateOf<Bitmap?>(null) }
-    var showImage by remember(r.id) { mutableStateOf(false) }
-    var imageFailed by remember(r.id) { mutableStateOf(false) }
-    var imageAttempt by remember(r.id) { mutableStateOf(0) }
-    var busy by remember(r.id) { mutableStateOf(false) }
-    var error by remember(r.id) { mutableStateOf<String?>(null) }
-    var confirmApprove by remember(r.id) { mutableStateOf(false) }
-    var rejecting by remember(r.id) { mutableStateOf(false) }
+    var week by remember { mutableStateOf<Receipts.Summary?>(null) }
+    var items by remember(filter, refreshTick) { mutableStateOf<List<Receipts.Item>?>(null) }
+    var page by remember(filter, refreshTick) { mutableIntStateOf(1) }
+    var more by remember(filter, refreshTick) { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
 
-    LaunchedEffect(r.id, showImage, imageAttempt) {
-        if (showImage && image == null && r.hasImage) {
+    fun load(next: Int) {
+        loading = true
+        scope.launch {
+            when (val r = withContext(Dispatchers.IO) { Receipts.history(context.applicationContext, FILTERS[filter].first, next) }) {
+                is Receipts.Result.Ok -> {
+                    items = if (next == 1) r.value.items else (items ?: emptyList()) + r.value.items
+                    more = r.value.hasMore
+                    page = next
+                    error = null
+                }
+                Receipts.Result.NeedKey -> store.revokeManageKey()
+                is Receipts.Result.Failed -> error = r.message
+                Receipts.Result.AlreadyDecided -> {}
+            }
+            loading = false
+        }
+    }
+    LaunchedEffect(filter, refreshTick) { load(1) }
+    LaunchedEffect(refreshTick) {
+        (withContext(Dispatchers.IO) { Receipts.summary(context.applicationContext, "7d") } as? Receipts.Result.Ok)?.let { week = it.value }
+    }
+
+    // The week in four figures.
+    AppCard(padding = 12) {
+        val m = week?.metrics
+        Row(Modifier.fillMaxWidth()) {
+            SummaryCell("کل رسیدها", m?.let { it.autoApproved + it.manualApproved + it.rejected + it.needsReview }, "۷ روز اخیر", Tone.info, Modifier.weight(1f))
+            SummaryCell("تأیید خودکار", m?.autoApproved, "۷ روز اخیر", Tone.good, Modifier.weight(1f))
+            SummaryCell("نیازمند بررسی", m?.needsReview, "در صف انتظار", Tone.warn, Modifier.weight(1f))
+            SummaryCell("مغایرت", m?.unmatched, "واریز بی‌فاکتور", Tone.bad, Modifier.weight(1f))
+        }
+    }
+    Segmented(FILTERS.map { it.second }, filter, onFilter)
+
+    error?.let { ErrorState(it) { load(1) } }
+    val list = items
+    when {
+        list == null && error == null -> repeat(3) { Skeleton(Modifier.fillMaxWidth(), height = 110) }
+        list != null && list.isEmpty() -> AppCard {
+            EmptyState(
+                Icons.Filled.CheckCircle,
+                when (FILTERS[filter].first) {
+                    "pending" -> "رسیدی در انتظار بررسی نیست"
+                    "mismatch" -> "مغایرتی پیدا نشد"
+                    "approved" -> "هنوز رسیدی تأیید نشده"
+                    else -> "هنوز رسیدی ثبت نشده"
+                },
+                if (FILTERS[filter].first == "pending") "هر رسیدی که خودکار تأیید نشود، اینجا می‌آید." else null,
+            )
+        }
+        list != null -> {
+            list.forEach { item -> if (item.isDeposit) DepositCard(item, now) else ReceiptRow(item, now) { onOpen(item.id) } }
+            if (more) {
+                OutlinedButton(onClick = { load(page + 1) }, enabled = !loading, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
+                    Text(if (loading) "در حال دریافت…" else "نمایش بیشتر")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryCell(label: String, value: Int?, sub: String, tone: Tone, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        IconChip(
+            when (tone) {
+                Tone.good -> Icons.Filled.Check
+                Tone.warn -> Icons.Filled.DateRange
+                Tone.bad -> Icons.Filled.Warning
+                else -> Icons.Filled.Info
+            },
+            tone, 32,
+        )
+        if (value == null) Skeleton(Modifier.width(28.dp), height = 22) else Text(Persian.number(value), color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text(label, color = Brand.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(sub, color = Brand.Muted, fontSize = 10.sp, maxLines = 1)
+    }
+}
+
+private fun stateTone(state: String, via: String?): Pair<String, String> = when (state) {
+    "approved" -> (if (via == "auto") "تأیید خودکار" else "تأیید شده") to "good"
+    "rejected" -> "رد شده" to "bad"
+    else -> "نیازمند بررسی" to "warn"
+}
+
+/** One receipt in the list: who, how much, when, where it stands and why. */
+@Composable
+private fun ReceiptRow(r: Receipts.Item, now: Long, onOpen: () -> Unit) {
+    val (label, toneName) = stateTone(r.state, r.via)
+    val tone = Tone.of(toneName)
+    AppCard(padding = 14) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+            IconChip(Icons.Filled.AccountCircle, tone, 44)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(r.customer ?: "مشتری", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                Text(listOfNotNull(r.tracking?.let { "سفارش " + Persian.latin(it) }, r.title).joinToString(" · "), color = Brand.Muted, fontSize = 12.sp, maxLines = 1)
+            }
+            StatusBadge(label, tone)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(r.amount?.let { Money.toman(it) } ?: "—", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+            Text(Persian.day(r.at, now) + " " + Persian.clock(r.at), color = Brand.Muted, fontSize = 12.sp)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(tone.fg))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                Persian.digits(r.reason ?: if (r.score != null) "امتیاز " + r.score + " از " + (r.threshold ?: 70) else r.rail ?: ""),
+                color = Brand.Muted, fontSize = 12.sp, maxLines = 1, modifier = Modifier.weight(1f),
+            )
+            OutlinedButton(onClick = onOpen, shape = RoundedCornerShape(12.dp)) { Text("مشاهده", fontSize = 13.sp) }
+        }
+    }
+}
+
+/** A bank deposit no invoice claimed, or an SMS that could not be read. */
+@Composable
+private fun DepositCard(d: Receipts.Item, now: Long) {
+    val unreadable = d.state == "unparsed"
+    AppCard(padding = 14) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconChip(if (unreadable) Icons.Filled.Warning else Icons.Filled.Info, if (unreadable) Tone.warn else Tone.bad, 40)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(if (unreadable) "پیامک بانکی خوانده نشد" else "واریز بدون فاکتور", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(listOfNotNull(d.sender?.let { "از " + Persian.sender(it) }, Persian.day(d.at, now) + " " + Persian.clock(d.at)).joinToString(" · "), color = Brand.Muted, fontSize = 12.sp)
+            }
+            StatusBadge("مغایرت", if (unreadable) Tone.warn else Tone.bad)
+        }
+        if (d.amount != null) Text(Money.toman(d.amount), color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        d.note?.let { Text(Persian.digits(it), color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp) }
+    }
+}
+
+// ── one receipt ─────────────────────────────────────────────────────────
+
+@Composable
+private fun ReceiptDetailScreen(store: Store, id: Long, now: Long, onBack: () -> Unit, onDecided: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var detail by remember(id) { mutableStateOf<Receipts.Detail?>(null) }
+    var error by remember(id) { mutableStateOf<String?>(null) }
+    var reasons by remember { mutableStateOf<List<Receipts.Reason>>(emptyList()) }
+    var busy by remember(id) { mutableStateOf(false) }
+    var confirmApprove by remember(id) { mutableStateOf(false) }
+    var rejecting by remember(id) { mutableStateOf(false) }
+    var image by remember(id) { mutableStateOf<Bitmap?>(null) }
+    var showImage by remember(id) { mutableStateOf(false) }
+    var imageFailed by remember(id) { mutableStateOf(false) }
+    var imageAttempt by remember(id) { mutableIntStateOf(0) }
+
+    fun load() {
+        scope.launch {
+            when (val r = withContext(Dispatchers.IO) { Receipts.detail(context.applicationContext, id) }) {
+                is Receipts.Result.Ok -> { detail = r.value; error = null }
+                Receipts.Result.NeedKey -> store.revokeManageKey()
+                is Receipts.Result.Failed -> error = r.message
+                Receipts.Result.AlreadyDecided -> {}
+            }
+        }
+    }
+    LaunchedEffect(id) {
+        load()
+        (withContext(Dispatchers.IO) { Receipts.reasons(context.applicationContext) } as? Receipts.Result.Ok)?.let { reasons = it.value }
+    }
+    LaunchedEffect(id, showImage, imageAttempt) {
+        if (showImage && image == null) {
             imageFailed = false
-            image = withContext(Dispatchers.IO) { Receipts.image(context.applicationContext, r.id) }
+            image = withContext(Dispatchers.IO) { Receipts.image(context.applicationContext, id) }
             imageFailed = image == null
         }
     }
@@ -139,34 +288,50 @@ private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.R
             val result = withContext(Dispatchers.IO) { action() }
             busy = false
             when (result) {
-                is Receipts.Result.Ok -> onDecided(done)
-                // Decided elsewhere first — by the bot, or another admin: the card simply goes.
-                Receipts.Result.AlreadyDecided -> onDecided(null)
-                Receipts.Result.NeedKey -> onKeyRefused()
+                // The page shows what the SERVER now says, not what the tap hoped for.
+                is Receipts.Result.Ok -> { store.event("system", "ok", done); onDecided(); load() }
+                Receipts.Result.AlreadyDecided -> { onDecided(); load() }
+                Receipts.Result.NeedKey -> store.revokeManageKey()
                 is Receipts.Result.Failed -> error = result.message
             }
         }
     }
 
-    Section(
-        Money.toman(r.amount), Icons.Filled.Lock, Brand.Warn,
-        trailing = { Pill(Persian.ago(r.createdAt, now), Brand.WarnSoft, Brand.Warn) },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                listOfNotNull(r.customer, r.username?.let { "@$it" }).joinToString(" · ").ifEmpty { "مشتری" },
-                color = Brand.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-            )
-            Text(listOfNotNull(r.title, r.rail, r.tracking?.let { "کد پیگیری $it" }).joinToString(" · "), color = Brand.Muted, fontSize = 12.sp)
-        }
-        if (r.score != null) {
-            Column(
-                Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(Brand.Canvas).padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text("🤖 امتیاز ربات: " + Persian.number(r.score) + " از " + Persian.number(r.threshold ?: 70) + " لازم", color = Brand.Ink, fontSize = 13.sp)
-                r.why.forEach { Text(Persian.digits(it), color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp) }
-            }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        IconButton(onClick = onBack) { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "بازگشت", tint = Brand.Ink) }
+        Text("جزئیات رسید", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    }
+    error?.let { ErrorState(it) { load() } }
+    val d = detail
+    if (d == null) {
+        if (error == null) repeat(3) { Skeleton(Modifier.fillMaxWidth(), height = 120) }
+        return
+    }
+    val r = d.item
+    val (label, toneName) = stateTone(r.state, r.via)
+    val tone = Tone.of(toneName)
+
+    // The amount and where it stands.
+    HeroStatus(
+        title = r.amount?.let { Money.toman(it) } ?: "—",
+        text = label + (r.reason?.let { " — " + Persian.digits(it) } ?: ""),
+        tone = tone,
+        icon = when (r.state) { "approved" -> Icons.Filled.CheckCircle; "rejected" -> Icons.Filled.Close; else -> Icons.Filled.DateRange },
+        alive = false,
+    )
+
+    AppCard {
+        SectionHeader("اطلاعات سفارش و مشتری")
+        InfoRow("نام مشتری", r.customer ?: "—")
+        InfoRow("شمارهٔ سفارش", r.tracking?.let { Persian.latin(it) } ?: "—", raw = true)
+        r.title?.let { InfoRow("محصول", it) }
+        InfoRow("روش پرداخت", r.rail ?: "—")
+        InfoRow("زمان ثبت", Persian.date(r.at) + "، " + Persian.clock(r.at))
+        d.deposit?.let { dep ->
+            HorizontalDivider(color = Brand.Line)
+            InfoRow("پیامک بانک از", dep.sender?.let { Persian.sender(it) } ?: "—", raw = true)
+            InfoRow("مبلغ واریز", dep.amount?.let { Money.toman(it) } ?: "—")
+            InfoRow("زمان واریز", Persian.date(dep.at) + "، " + Persian.clock(dep.at))
         }
         if (r.hasImage) {
             when {
@@ -175,38 +340,78 @@ private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.R
                     Text("عکس دریافت نشد.", color = Brand.Bad, fontSize = 12.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = { imageAttempt++ }) { Text("دوباره") }
                 }
-                image == null -> Text("در حال دریافت عکس…", color = Brand.Muted, fontSize = 12.sp)
+                image == null -> Skeleton(Modifier.fillMaxWidth(), height = 200)
                 else -> Image(
-                    image!!.asImageBitmap(), contentDescription = "عکس رسید (برای بستن بزنید)",
-                    contentScale = ContentScale.FillWidth,
-                    // Closing the photo frees it: a dozen opened receipts must not exhaust an old phone.
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).clip(MaterialTheme.shapes.small).clickable { showImage = false; image = null },
+                    image!!.asImageBitmap(), contentDescription = "عکس رسید (برای بستن بزنید)", contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).clip(RoundedCornerShape(14.dp)).clickable { showImage = false; image = null },
                 )
             }
         }
-        error?.let { Notice(it, Brand.BadSoft, Brand.Bad) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+    }
+
+    // The engine's own reading — or, when there is none, saying so instead of a made-up zero.
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("امتیاز و نشانه‌های بررسی", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            if (d.score != null) StatusBadge(Persian.number(d.score) + " از " + Persian.number(d.threshold ?: 70) + " لازم", if (d.enough) Tone.good else Tone.warn)
+        }
+        if (d.score == null) {
+            Text("اطلاعات کافی نیست: هنوز پیامک بانکی با مبلغ این فاکتور نرسیده و ربات امتیازی نداده است.", color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp)
+        } else {
+            // The «why» is the suggestion below, said once.
+            d.signals.forEach { ScoreBar(Persian.digits(it.label), null, it.earned, it.weight, it.ok) }
+        }
+    }
+
+    val sugTone = Tone.of(d.suggestionTone)
+    AppCard {
+        SectionHeader("پیشنهاد سیستم")
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(sugTone.bg).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(d.suggestionTitle, color = sugTone.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            d.suggestionText?.let { Text(Persian.digits(it), color = Brand.Ink, fontSize = 13.sp, lineHeight = 20.sp) }
+        }
+        Text("این فقط پیشنهاد است؛ تصمیم با شماست و ربات دوباره بررسی می‌کند.", color = Brand.Muted, fontSize = 11.sp)
+    }
+
+    if (d.timeline.isNotEmpty()) {
+        AppCard {
+            SectionHeader("تاریخچه")
+            d.timeline.forEachIndexed { i, (at, entry) ->
+                TimelineRow(Persian.digits(entry.first), Persian.day(at, now) + " " + Persian.clock(at), Tone.of(entry.second), i == d.timeline.lastIndex)
+            }
+        }
+    }
+
+    if (r.state == "pending") {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             Button(
-                onClick = { confirmApprove = true }, enabled = !busy,
-                modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.medium,
-            ) { Text(if (busy) "…" else "✅ تأیید") }
+                onClick = { confirmApprove = true }, enabled = !busy, shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.weight(1f).height(54.dp),
+            ) {
+                Icon(Icons.Filled.Check, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(if (busy) "…" else "تأیید پرداخت", fontSize = 15.sp)
+            }
             OutlinedButton(
-                onClick = { rejecting = true }, enabled = !busy,
-                modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.medium,
+                onClick = { rejecting = true }, enabled = !busy, shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.weight(1f).height(54.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Brand.Bad), border = dangerBorder(),
-            ) { Text("❌ رد") }
+            ) { Text("رد رسید", fontSize = 15.sp) }
         }
     }
 
     if (confirmApprove) {
         AlertDialog(
             onDismissRequest = { confirmApprove = false },
-            title = { Text("تأیید رسید") },
-            text = { Text(Money.toman(r.amount) + (r.customer?.let { " از $it" } ?: "") + " تأیید و سفارش تحویل شود؟", lineHeight = 22.sp) },
+            title = { Text("تأیید پرداخت") },
+            text = { Text((r.amount?.let { Money.toman(it) } ?: "") + (r.customer?.let { " از $it" } ?: "") + " تأیید و سفارش تحویل شود؟", lineHeight = 22.sp) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmApprove = false
-                    decide({ Receipts.approve(context.applicationContext, r.id) }, "رسید " + Money.toman(r.amount) + " از اپ تأیید شد")
+                    decide({ Receipts.approve(context.applicationContext, id) }, "رسید " + (r.amount?.let { Money.toman(it) } ?: "") + " از اپ تأیید شد")
                 }) { Text("تأیید") }
             },
             dismissButton = { TextButton(onClick = { confirmApprove = false }) { Text("انصراف") } },
@@ -219,12 +424,12 @@ private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.R
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("دلیل برای مشتری هم فرستاده می‌شود.", color = Brand.Muted, fontSize = 12.sp)
-                    (reasons.ifEmpty { listOf(Receipts.Reason("not_found", "تراکنش در حساب مقصد یافت نشد")) }).forEach { reason ->
+                    reasons.ifEmpty { listOf(Receipts.Reason("not_found", "تراکنش در حساب مقصد یافت نشد")) }.forEach { reason ->
                         Text(
                             reason.label, color = Brand.Ink, fontSize = 14.sp,
-                            modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable {
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
                                 rejecting = false
-                                decide({ Receipts.reject(context.applicationContext, r.id, reason.code) }, "رسید " + Money.toman(r.amount) + " از اپ رد شد: " + reason.label)
+                                decide({ Receipts.reject(context.applicationContext, id, reason.code) }, "رسید " + (r.amount?.let { Money.toman(it) } ?: "") + " از اپ رد شد: " + reason.label)
                             }.padding(vertical = 12.dp, horizontal = 6.dp),
                         )
                         HorizontalDivider(color = Brand.Line)
@@ -233,6 +438,14 @@ private fun ReceiptCard(r: Receipts.Receipt, now: Long, reasons: List<Receipts.R
             },
             confirmButton = { TextButton(onClick = { rejecting = false }) { Text("انصراف") } },
         )
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String, raw: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Brand.Muted, fontSize = 13.sp, modifier = Modifier.weight(0.42f))
+        Text(if (raw) value else Persian.digits(value), color = Brand.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(0.58f))
     }
 }
 

@@ -85,17 +85,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** «خانه»: is it working, what is left to set up, which numbers, and the last few things that happened. */
-@Composable
-fun HomeTab(store: Store, now: Long, resumed: Int, onReport: () -> Unit, onMore: () -> Unit) {
-    watchStore()
-    StatusCard(store, now)
-    SubscriptionCard(store, now, onMore)
-    ChecklistCard(store, resumed)
-    SendersCard(store)
-    RecentEvents(store, onReport)
-}
-
 // ── pairing ─────────────────────────────────────────────────────────────
 
 @Composable
@@ -187,98 +176,10 @@ private fun Steps(vararg steps: String) {
 
 // ── status ──────────────────────────────────────────────────────────────
 
-@Composable
-private fun StatusCard(store: Store, now: Long) {
-    watchStore()
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val ready = store.senders.isNotEmpty()
-    val online = now - store.lastPing < 40 * 60 * 1000L
-    val revoked = store.lastError == "revoked"
-    val smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
-    val pending = store.queue().size
-    val (bg, fg, title) = when {
-        revoked -> Triple(Brand.BadSoft, Brand.Bad, "کد اتصال باطل شده")
-        !smsGranted -> Triple(Brand.BadSoft, Brand.Bad, "اجازهٔ پیامک داده نشده")
-        !ready -> Triple(Brand.WarnSoft, Brand.Warn, "هنوز هیچ پیامکی فرستاده نمی‌شود")
-        !online -> Triple(Brand.BadSoft, Brand.Bad, "ارتباط با ربات برقرار نیست")
-        pending > 0 -> Triple(Brand.WarnSoft, Brand.Warn, "پیامک‌هایی منتظر ارسال‌اند")
-        else -> Triple(Brand.GoodSoft, Brand.Good, "فعال است")
-    }
-    val well = ready && online && smsGranted && !revoked && pending == 0
-    // A dot that breathes while things are well — the one moving thing on the screen, so «it is
-    // working» is seen, not read.
-    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
-        initialValue = 0.35f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "dot",
-    )
-    var checking by remember { mutableStateOf(false) }
-    var checkResult by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(checkResult) { if (checkResult != null) { delay(6_000); checkResult = null } }
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = bg),
-        shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, fg.copy(alpha = 0.18f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(14.dp).clip(CircleShape).background(fg.copy(alpha = if (well) pulse else 1f)))
-                Spacer(Modifier.width(10.dp))
-                Text(title, color = fg, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-            }
-            store.server?.let { Text("سرور: " + Persian.latin(it), color = Brand.Muted, fontSize = 12.sp) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                StatTile("آخرین ارتباط", Persian.ago(store.lastPing, now), Modifier.weight(1f), if (online) Brand.Ink else Brand.Bad)
-                StatTile("آخرین پیامک", Persian.ago(store.lastSent, now), Modifier.weight(1f))
-                StatTile("امروز", Persian.number(store.sentToday(now)) + " پیامک", Modifier.weight(1f))
-            }
-            when {
-                revoked -> Text(
-                    "ربات این گوشی را دیگر نمی‌شناسد (آدرس در ربات عوض شده). در «بیشتر» قطع اتصال را بزنید و «کپی کد اتصال» تازه را از ربات بچسبانید.",
-                    color = Brand.Ink, fontSize = 13.sp, lineHeight = 20.sp,
-                )
-                !smsGranted -> Text("تا اجازهٔ دریافت پیامک داده نشود، هیچ پیامکی به ربات نمی‌رسد. در فهرست آماده‌سازی پایین صفحه «اجازه بده» را بزنید.", color = Brand.Ink, fontSize = 13.sp, lineHeight = 20.sp)
-                !ready -> Text("پایین همین صفحه شمارهٔ پیامک بانک را اضافه کنید.", color = Brand.Ink, fontSize = 13.sp)
-                !online -> Text(
-                    "ربات بیش از ۴۰ دقیقه است که از این گوشی خبری ندارد. اینترنت گوشی را بررسی کنید" + (Net.lastPingReason?.let { " — آخرین خطا: $it" } ?: "") + ".",
-                    color = Brand.Ink, fontSize = 13.sp, lineHeight = 20.sp,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(
-                    onClick = {
-                        checking = true
-                        scope.launch {
-                            val t0 = System.currentTimeMillis()
-                            val sent = withContext(Dispatchers.IO) { Net.flush(context.applicationContext) }
-                            val ok = withContext(Dispatchers.IO) { Net.ping(context.applicationContext) }
-                            val ms = System.currentTimeMillis() - t0
-                            checking = false
-                            checkResult = when {
-                                ok && sent > 0 -> "✅ ربات جواب داد و " + Persian.number(sent) + " پیامک فرستاده شد"
-                                ok -> "✅ ربات جواب داد (" + Persian.number(ms.toInt()) + " میلی‌ثانیه)"
-                                else -> "❌ " + (Net.lastPingReason ?: "ربات جواب نداد")
-                            }
-                        }
-                    },
-                    enabled = !checking,
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.medium,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = fg),
-                    border = BorderStroke(1.dp, fg.copy(alpha = 0.5f)),
-                ) { Text(if (checking) "در حال بررسی…" else if (pending > 0) "ارسال ${Persian.number(pending)} پیامک منتظر" else "بررسی اتصال") }
-            }
-            checkResult?.let { Text(it, color = Brand.Ink, fontSize = 13.sp) }
-        }
-    }
-}
-
 // ── the shop's own subscription, as the bot reported it ─────────────────
 
 @Composable
-private fun SubscriptionCard(store: Store, now: Long, onMore: () -> Unit) {
+internal fun SubscriptionCard(store: Store, now: Long, onMore: () -> Unit) {
     watchStore()
     val info = store.shopInfo
     val sub = info.optJSONObject("subscription") ?: return
@@ -333,7 +234,7 @@ private fun SubscriptionCard(store: Store, now: Long, onMore: () -> Unit) {
 
 @SuppressLint("BatteryLife")
 @Composable
-private fun ChecklistCard(store: Store, resumed: Int) {
+internal fun ChecklistCard(store: Store, resumed: Int) {
     watchStore()
     val context = LocalContext.current
     // Re-read on every return to the app: the permission was granted in Settings, the battery
@@ -570,7 +471,7 @@ private fun openAppSettings(context: android.content.Context) {
 // ── the seller's own list of bank numbers ───────────────────────────────
 
 @Composable
-private fun SendersCard(store: Store) {
+internal fun SendersCard(store: Store) {
     watchStore()
     var adding by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
@@ -739,7 +640,7 @@ private fun AddSenderDialog(onDone: (String?) -> Unit) {
 // ── the last few things that happened ───────────────────────────────────
 
 @Composable
-private fun RecentEvents(store: Store, onReport: () -> Unit) {
+internal fun RecentEvents(store: Store, onReport: () -> Unit) {
     watchStore()
     val events = store.events()
     var expanded by remember { mutableStateOf<String?>(null) }
