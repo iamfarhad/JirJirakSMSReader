@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -35,7 +34,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -62,7 +60,6 @@ import ir.jirjirak.sms.Store
 import ir.jirjirak.sms.SyncJob
 import ir.jirjirak.sms.Updates
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -205,23 +202,10 @@ private fun UpdateCard(store: Store, now: Long) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val latest = Updates.available(context)
-    val installable = latest?.let { Updates.installable(context) }
     var checking by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
     // The answer of «بررسی کن», said where it cannot be missed: a grey line at the foot of the card
     // changed so little that sellers reported the button as doing nothing.
     var checkOutcome by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
-    var progress by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-    var needsPermission by remember { mutableStateOf(false) }
-
-    // While a download runs, read its progress off DownloadManager every half second.
-    LaunchedEffect(store.downloadId) {
-        while (store.downloadId >= 0) {
-            progress = Updates.progress(context)
-            delay(500)
-        }
-        progress = null
-    }
 
     Section(
         "به‌روزرسانی", Icons.Filled.Refresh,
@@ -235,55 +219,19 @@ private fun UpdateCard(store: Store, now: Long) {
                 (latest?.let { " · نسخهٔ تازه: " + Persian.sender(it.version) } ?: ""),
             color = Brand.Ink, fontSize = 14.sp,
         )
-        when {
-            latest == null -> Text("برنامه خودش هر چند ساعت یک بار نسخهٔ تازه را می‌بیند، در پس‌زمینه دانلود می‌کند و با اعلان خبر می‌دهد.", color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp)
-            installable != null -> {
-                Text("نسخهٔ تازه دانلود شده است. با زدن «نصب»، اندروید تأیید شما را می‌خواهد؛ تنظیمات و شماره‌هایتان می‌ماند.", color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp)
-                if (needsPermission) {
-                    Notice("اندروید برای نصب از این برنامه اجازه می‌خواهد. در صفحه‌ای که باز شد «اجازه» را روشن کنید و برگردید، بعد دوباره «نصب» را بزنید.", Brand.WarnSoft, Brand.Warn)
-                }
-                Button(
-                    onClick = {
-                        if (Updates.canInstall(context)) {
-                            needsPermission = false
-                            Updates.install(context, installable)
-                        } else {
-                            needsPermission = true
-                            Updates.openInstallPermission(context)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(50.dp), shape = MaterialTheme.shapes.medium,
-                ) { Text("نصب نسخهٔ " + Persian.digits(latest.version), fontSize = 15.sp) }
-            }
-            progress != null -> {
-                val (so, total) = progress!!
-                LinearProgressIndicator(
-                    progress = { if (total > 0) so.toFloat() / total else 0f },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                    color = Brand.Green, trackColor = Brand.Line,
-                )
-                Text(
-                    "در حال دانلود… " + (if (total > 0) Persian.number((so * 100 / total).toInt()) + "٪" else Persian.number((so / 1024).toInt()) + " کیلوبایت"),
-                    color = Brand.Muted, fontSize = 13.sp,
-                )
-            }
-            else -> {
-                Text("نسخهٔ تازه‌ای آمده است. دانلود آن حدود یک مگابایت است و بعد از آن فقط «نصب» را می‌زنید.", color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = {
-                            if (!Updates.download(context, latest)) result = "دانلود شروع نشد؛ از مرورگر دریافت کنید."
-                        },
-                        modifier = Modifier.weight(1f).height(50.dp), shape = MaterialTheme.shapes.medium,
-                    ) { Text("دانلود", fontSize = 15.sp) }
-                    OutlinedButton(onClick = { Updates.open(context, latest.url) }, modifier = Modifier.weight(1f).height(50.dp), shape = MaterialTheme.shapes.medium) {
-                        Text("با مرورگر")
-                    }
-                }
-            }
+        if (latest == null) {
+            Text("برنامه خودش هر چند ساعت یک بار نسخهٔ تازه را می‌بیند و با اعلان خبر می‌دهد.", color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp)
+        } else {
+            Text(
+                "«دانلود» لینک نسخهٔ تازه را در مرورگر باز می‌کند. بعد از دانلود، فایل را باز کنید و «نصب» را بزنید؛ تنظیمات و شماره‌هایتان می‌ماند.",
+                color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp,
+            )
+            Button(
+                onClick = { Updates.open(context, latest.url) },
+                modifier = Modifier.fillMaxWidth().height(50.dp), shape = MaterialTheme.shapes.medium,
+            ) { Text("دانلود نسخهٔ " + Persian.digits(latest.version), fontSize = 15.sp) }
         }
         checkOutcome?.let { (ok, text) -> Notice(text, if (ok) Brand.GoodSoft else Brand.BadSoft, if (ok) Brand.Good else Brand.Bad) }
-        result?.let { Notice(it, Brand.BadSoft, Brand.Bad) }
         HorizontalDivider(color = Brand.Line)
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {

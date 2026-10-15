@@ -25,10 +25,8 @@ class BootReceiver : BroadcastReceiver() {
             Thread { runCatching { Recovery.scan(app, force = true) } }.start()
         }
         if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            // The APK that was just installed is of no further use.
-            store.downloadedFile?.let { runCatching { java.io.File(it).delete() } }
-            store.downloadedVersion = null
-            store.downloadedFile = null
+            // Whatever an older version downloaded is of no further use.
+            Updates.forgetOldDownloads(context)
         }
     }
 }

@@ -1,24 +1,25 @@
 package ir.jirjirak.sms
 
-import android.app.DownloadManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import androidx.core.content.FileProvider
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * «نسخهٔ تازه آمده» — the app learns about a new release, fetches the APK itself and hands it to
- * the installer; the seller only confirms the install (Android allows no less for a sideloaded app).
+ * «نسخهٔ تازه آمده» — the app learns about a new release and says so; «دانلود» opens the download
+ * link in the browser, and the browser hands the APK to Android's installer.
+ *
+ * The app does not download or install anything itself any more. That needed
+ * REQUEST_INSTALL_PACKAGES — one more powerful permission on an app that already reads bank SMS, and
+ * exactly the combination Play Protect holds against an app installed from outside Google Play.
  *
  * WHERE THE VERSION COMES FROM. First the bot: its ping reply names the latest version and a
  * download address the seller's own server can mirror, which matters because GitHub is slow or
@@ -36,7 +37,6 @@ object Updates {
     private const val CHANNEL = "updates"
     private const val NOTIFICATION_ID = 2
     private const val EVERY_MS = 6 * 60 * 60 * 1000L
-    const val APK = "application/vnd.android.package-archive"
 
     data class Latest(val version: String, val url: String)
 
@@ -55,15 +55,16 @@ object Updates {
         return latest
     }
 
-    /** From the background beat: at most every 6 hours; a new version is downloaded and announced once. */
+    /** From the background beat: at most every 6 hours; a new version is announced once, with its link. */
     fun checkInBackground(context: Context) {
         val store = Store(context)
         if (System.currentTimeMillis() - store.lastUpdateCheck < EVERY_MS) return
         val latest = check(context) ?: return
         if (!SemVer.isNewer(latest.version, BuildConfig.VERSION_NAME)) return
-        if (store.downloadedVersion == latest.version || store.downloadVersion == latest.version) return
-        store.event("update", "info", "نسخهٔ تازه پیدا شد: " + latest.version, "در حال دانلود در پس‌زمینه")
-        download(context, latest)
+        if (store.notifiedVersion == latest.version) return
+        store.event("update", "info", "نسخهٔ تازه آمد: " + latest.version, "برای دانلود، اعلان را بزنید یا در «بیشتر ← به‌روزرسانی» «دانلود» را.")
+        notify(context, latest)
+        store.notifiedVersion = latest.version
     }
 
     /**
@@ -114,81 +115,7 @@ object Updates {
         return Latest(v, "$REPO/releases/download/v$v/JirjirakSMS.apk")
     }
 
-    // ── download and install ────────────────────────────────────────────
-
-    /** Fetch the APK with the system's DownloadManager; [DownloadReceiver] takes it from there. */
-    fun download(context: Context, latest: Latest): Boolean {
-        val store = Store(context)
-        val dm = context.getSystemService(DownloadManager::class.java) ?: return false
-        return runCatching {
-            val name = "JirjirakSMS-" + latest.version + ".apk"
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, name).delete() }
-            val request = DownloadManager.Request(Uri.parse(latest.url))
-                .setTitle("جیرجیرک پیامک " + latest.version)
-                .setDescription("دانلود نسخهٔ تازه")
-                .setMimeType(APK)
-                .setAllowedOverMetered(true)
-                .setAllowedOverRoaming(true)
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-                .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, name)
-            store.downloadId = dm.enqueue(request)
-            store.downloadVersion = latest.version
-            true
-        }.getOrDefault(false)
-    }
-
-    /** Bytes so far and in total of the running download, or null when none is running. */
-    fun progress(context: Context): Pair<Long, Long>? {
-        val store = Store(context)
-        val id = store.downloadId.takeIf { it >= 0 } ?: return null
-        val dm = context.getSystemService(DownloadManager::class.java) ?: return null
-        return runCatching {
-            dm.query(DownloadManager.Query().setFilterById(id))?.use { c ->
-                if (!c.moveToFirst()) return null
-                when (c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
-                    DownloadManager.STATUS_SUCCESSFUL, DownloadManager.STATUS_FAILED -> null
-                    else -> Pair(
-                        c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
-                        c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
-                    )
-                }
-            }
-        }.getOrNull()
-    }
-
-    /** The downloaded APK of the latest version, if it is on the phone. */
-    fun installable(context: Context): File? {
-        val store = Store(context)
-        val latest = available(context) ?: return null
-        if (store.downloadedVersion != latest.version) return null
-        val f = File(store.downloadedFile ?: return null)
-        return f.takeIf { it.exists() && it.length() > 0 }
-    }
-
-    /** Android asks the seller to confirm; a sideloaded app may do no more. */
-    fun install(context: Context, file: File): Boolean = runCatching {
-        val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, APK)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-        true
-    }.getOrDefault(false)
-
-    /** May this app open the installer? Android 8+ asks once per app; [openInstallPermission] goes there. */
-    fun canInstall(context: Context): Boolean =
-        Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()
-
-    fun openInstallPermission(context: Context) {
-        if (Build.VERSION.SDK_INT < 26) return
-        runCatching {
-            context.startActivity(
-                Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }
-    }
+    // ── getting it ──────────────────────────────────────────────────────
 
     fun open(context: Context, url: String) {
         runCatching {
@@ -196,41 +123,26 @@ object Updates {
         }
     }
 
-    /** The download finished: remember the file, tell the seller once. */
-    fun downloaded(context: Context, id: Long) {
-        val store = Store(context)
-        if (id != store.downloadId) return
-        val dm = context.getSystemService(DownloadManager::class.java) ?: return
-        val version = store.downloadVersion ?: return
-        val file = runCatching {
-            dm.query(DownloadManager.Query().setFilterById(id))?.use { c ->
-                if (!c.moveToFirst()) return@use null
-                if (c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) != DownloadManager.STATUS_SUCCESSFUL) return@use null
-                Uri.parse(c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI))).path?.let { File(it) }
-            }
-        }.getOrNull()
-        store.downloadId = -1
-        store.downloadVersion = null
-        if (file == null || !file.exists()) {
-            store.event("update", "warn", "دانلود نسخهٔ $version ناتمام ماند", "از «بیشتر ← به‌روزرسانی» دوباره تلاش کنید.")
-            return
+    /**
+     * Files and keys of the in-app downloader up to 1.2.0, gone after an update: the APKs it left in
+     * the app's own Download folder are a megabyte or two each, and nothing reads them any more.
+     */
+    fun forgetOldDownloads(context: Context) {
+        runCatching {
+            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.listFiles()
+                ?.filter { it.name.startsWith("JirjirakSMS") && it.name.endsWith(".apk") }?.forEach(File::delete)
         }
-        store.downloadedVersion = version
-        store.downloadedFile = file.absolutePath
-        store.event("update", "ok", "نسخهٔ $version دانلود شد", "برای نصب، در «بیشتر» روی «نصب» بزنید.")
-        if (store.notifiedVersion != version) {
-            notify(context, version)
-            store.notifiedVersion = version
-        }
+        Store(context).forgetDownloads()
     }
 
-    private fun notify(context: Context, version: String) {
+    /** «نسخهٔ تازه آمد» — a tap opens the download link itself, in the browser. */
+    private fun notify(context: Context, latest: Latest) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "به‌روزرسانی", NotificationManager.IMPORTANCE_DEFAULT))
         }
-        val open = PendingIntent.getActivity(
-            context, 1, Intent(context, MainActivity::class.java).putExtra(MainActivity.TAB, MainActivity.TAB_MORE),
+        val download = PendingIntent.getActivity(
+            context, 1, Intent(Intent.ACTION_VIEW, Uri.parse(latest.url)),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else @Suppress("DEPRECATION") Notification.Builder(context)
@@ -238,21 +150,12 @@ object Updates {
             manager.notify(
                 NOTIFICATION_ID,
                 builder.setSmallIcon(R.drawable.ic_notification)
-                    .setContentTitle("نسخهٔ تازهٔ جیرجیرک پیامک دانلود شد")
-                    .setContentText("نسخهٔ " + version + " — برای نصب بزنید")
-                    .setContentIntent(open)
+                    .setContentTitle("نسخهٔ تازهٔ جیرجیرک پیامک آمد")
+                    .setContentText("نسخهٔ " + latest.version + " — برای دانلود بزنید")
+                    .setContentIntent(download)
                     .setAutoCancel(true)
                     .build(),
             )
         }
-    }
-}
-
-/** DownloadManager says a download ended; if it is ours, [Updates.downloaded] takes over. */
-class DownloadReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
-        val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-        if (id >= 0) Updates.downloaded(context, id)
     }
 }

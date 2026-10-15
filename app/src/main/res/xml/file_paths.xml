@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Where a downloaded APK lives, so the installer may read it: the app's own external files. -->
-<paths>
-    <external-files-path name="downloads" path="Download/" />
-</paths>

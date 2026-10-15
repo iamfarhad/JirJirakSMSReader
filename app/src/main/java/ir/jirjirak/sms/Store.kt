@@ -257,23 +257,10 @@ class Store(context: Context) {
         get() = prefs.getString("notified_version", null)
         set(v) = commit(prefs.edit().putString("notified_version", v))
 
-    /** The DownloadManager id of the APK being fetched, and the version it is. */
-    var downloadId: Long
-        get() = prefs.getLong("download_id", -1)
-        set(v) = commit(prefs.edit().putLong("download_id", v))
-
-    var downloadVersion: String?
-        get() = prefs.getString("download_version", null)
-        set(v) = commit(prefs.edit().putString("download_version", v))
-
-    /** A version whose APK is on the phone, ready to install, and where it is. */
-    var downloadedVersion: String?
-        get() = prefs.getString("downloaded_version", null)
-        set(v) = commit(prefs.edit().putString("downloaded_version", v))
-
-    var downloadedFile: String?
-        get() = prefs.getString("downloaded_file", null)
-        set(v) = commit(prefs.edit().putString("downloaded_file", v))
+    /** The in-app downloader's keys (up to 1.2.0), cleared once after the update that removed it. */
+    fun forgetDownloads() = commit(
+        prefs.edit().remove("download_id").remove("download_version").remove("downloaded_version").remove("downloaded_file"),
+    )
 
     // ── the event log: what the app did and why ─────────────────────────
 
