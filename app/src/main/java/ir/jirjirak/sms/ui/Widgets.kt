@@ -57,7 +57,10 @@ import org.json.JSONObject
 @Composable
 fun watchStore(): Int = Store.revision.intValue
 
-/** A white card on the soft canvas: a coloured icon chip and a title, then its content. */
+/**
+ * A card with a coloured icon chip and a title, then its content. Drawn by [AppCard] — the same
+ * corners, padding and shadow as every other card, so old and new screens sit side by side evenly.
+ */
 @Composable
 fun Section(
     title: String,
@@ -66,28 +69,19 @@ fun Section(
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Brand.Surface),
-        shape = MaterialTheme.shapes.large,
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(6.dp, MaterialTheme.shapes.large, ambientColor = Color(0x14000000), spotColor = Color(0x1A16A34A)),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(tint.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
-                }
-                Spacer(Modifier.width(10.dp))
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Brand.Ink, modifier = Modifier.weight(1f))
-                trailing?.invoke()
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(tint.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
             }
-            content()
+            Spacer(Modifier.width(10.dp))
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Brand.Ink, modifier = Modifier.weight(1f))
+            trailing?.invoke()
         }
+        content()
     }
 }
 

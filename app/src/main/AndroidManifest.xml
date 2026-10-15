@@ -3,8 +3,9 @@
 
     <!-- RECEIVE: hears new SMS as they arrive (only allowed senders' leave the phone). -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <!-- READ: only when the seller opens «انتخاب از پیامک‌ها», to list senders on screen. Optional;
-         nothing read this way is sent anywhere. -->
+    <!-- READ: for «انتخاب از پیامک‌ها» (senders listed on screen, nothing sent) and, only when the
+         seller turns it on, «بازیابی پیامک‌های جامانده»: bank SMS from allowed senders that arrived
+         while the app could not hear them, from the moment it was turned on, never a password. -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Required by JobScheduler for a job that waits for a network; without it, scheduling throws. -->
@@ -22,6 +23,8 @@
 
     <application
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

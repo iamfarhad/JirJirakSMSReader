@@ -31,14 +31,82 @@ object Alerts {
 
     private const val GROUP_APPROVED = "approved"
     private const val ID_APPROVED_SUMMARY = 12
+    private const val CHANNEL_REVIEW = "review"
+    private const val ID_REVIEW = 13
+    private const val ID_MISMATCH = 14
+
+    /** «سکوت شبانه»: from 23:00 to 08:00 nothing that can wait is said. */
+    const val QUIET_FROM = 23
+    const val QUIET_UNTIL = 8
+
+    /** What to do about a count the seller may want to hear of: notify, and what is now told. */
+    data class Tell(val notify: Boolean, val told: Int, val cancel: Boolean, val refresh: Boolean = false)
+
+    /**
+     * Receipts waiting, or deposits nobody claimed. Told when the count goes UP since the last time —
+     * the same three receipts are not news every fifteen minutes; told again in the morning if they
+     * arrived during quiet hours; withdrawn when there is nothing left. Pure: unit-tested.
+     */
+    fun tell(count: Int, told: Int, enabled: Boolean, quietNights: Boolean, hour: Int): Tell {
+        val quiet = quietNights && (hour >= QUIET_FROM || hour < QUIET_UNTIL)
+        return when {
+            count == 0 -> Tell(notify = false, told = 0, cancel = told > 0)
+            // One decided, some left: the notice still up says the new number, quietly.
+            count < told -> Tell(notify = false, told = count, cancel = false, refresh = enabled)
+            count > told && enabled && !quiet -> Tell(notify = true, told = count, cancel = false)
+            // Held for the morning: `told` stays put, so the first check after quiet hours says it.
+            else -> Tell(notify = false, told = told, cancel = !enabled && told > 0)
+        }
+    }
+
+    /**
+     * From the periodic job: the bot's own count of receipts waiting and deposits unplaced, told on the
+     * phone. Needs the manage key and a bot that has the dashboard; network — off the main thread.
+     */
+    fun checkReview(context: Context, now: Long = System.currentTimeMillis()) {
+        val store = Store(context)
+        if (store.manageKey == null || !store.supports("insights")) return
+        val summary = (Receipts.summary(context, "today") as? Receipts.Result.Ok)?.value ?: return
+        val hour = java.util.Calendar.getInstance().apply { timeInMillis = now }.get(java.util.Calendar.HOUR_OF_DAY)
+        val manager = context.getSystemService(NotificationManager::class.java)
+
+        val pending = summary.metrics.needsReview
+        tell(pending, store.toldPending, store.notifyReview, store.quietNights, hour).let { t ->
+            if (t.notify || t.refresh) {
+                notify(context, CHANNEL_REVIEW, "رسیدها و مغایرت‌ها", ID_REVIEW,
+                    "🧾 " + ir.jirjirak.sms.ui.Persian.number(pending) + " رسید منتظر بررسی",
+                    "این رسیدها خودکار تأیید نشدند و تصمیم شما را لازم دارند.", MainActivity.TAB_RECEIPTS,
+                    importance = NotificationManager.IMPORTANCE_DEFAULT, filter = 1, quiet = t.refresh)
+            }
+            if (t.cancel) manager?.cancel(ID_REVIEW)
+            if (t.told != store.toldPending) store.toldPending = t.told
+        }
+
+        // The same count the «مغایرت» list shows, so a notification never promises more than is there.
+        val mismatch = summary.openMismatch
+        tell(mismatch, store.toldMismatch, store.notifyMismatch, store.quietNights, hour).let { t ->
+            if (t.notify || t.refresh) {
+                notify(context, CHANNEL_REVIEW, "رسیدها و مغایرت‌ها", ID_MISMATCH,
+                    "⚠️ " + ir.jirjirak.sms.ui.Persian.number(mismatch) + " مغایرت تازه",
+                    "واریزی که به هیچ فاکتوری نخورد یا پیامکی که خوانده نشد. با یک تپ ببینید و تکلیفش را روشن کنید.", MainActivity.TAB_RECEIPTS,
+                    importance = NotificationManager.IMPORTANCE_DEFAULT, filter = 3, quiet = t.refresh)
+            }
+            if (t.cancel) manager?.cancel(ID_MISMATCH)
+            if (t.told != store.toldMismatch) store.toldMismatch = t.told
+        }
+    }
 
     /** «۱۷۵٬۰۱۳ تومان — سفارش سارا». Pure: unit-tested. */
     fun approvedText(amount: Long, customer: String?): String =
         listOfNotNull(amount.takeIf { it > 0 }?.let { Money.toman(it) }, customer?.let { "سفارش $it" }).joinToString(" — ").ifEmpty { "یک سفارش" }
 
     /** One per approval, grouped: a backlog flushed after a night offline is one stack, not twenty. */
+    /** Each approval its own id, never reused within a run: a clock remainder collided and wrapped. */
+    private val approvedIds = java.util.concurrent.atomic.AtomicInteger(1000)
+
     fun approved(context: Context, amount: Long, customer: String?) {
-        notify(context, CHANNEL_APPROVED, "سفارش‌های تأییدشده", (System.currentTimeMillis() % 100_000).toInt() + 1000,
+        val id = approvedIds.updateAndGet { if (it >= 9_999) 1000 else it + 1 }
+        notify(context, CHANNEL_APPROVED, "سفارش‌های تأییدشده", id,
             "✅ سفارش خودکار تأیید شد", approvedText(amount, customer), MainActivity.TAB_REPORT,
             importance = NotificationManager.IMPORTANCE_DEFAULT, group = GROUP_APPROVED)
         notify(context, CHANNEL_APPROVED, "سفارش‌های تأییدشده", ID_APPROVED_SUMMARY,
@@ -70,6 +138,8 @@ object Alerts {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         manager.cancel(ID_BATTERY)
         manager.cancel(ID_OFFLINE)
+        manager.cancel(ID_REVIEW)
+        manager.cancel(ID_MISMATCH)
     }
 
     /** From the beat: battery and connection, each told once until it recovers. */
@@ -119,14 +189,14 @@ object Alerts {
     private fun notify(
         context: Context, channel: String, channelName: String, id: Int,
         title: String, text: String, tab: Int, importance: Int = NotificationManager.IMPORTANCE_HIGH,
-        group: String? = null, summary: Boolean = false,
+        group: String? = null, summary: Boolean = false, filter: Int = 0, quiet: Boolean = false,
     ) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(channel, channelName, importance))
         }
         val open = PendingIntent.getActivity(
-            context, id, Intent(context, MainActivity::class.java).putExtra(MainActivity.TAB, tab),
+            context, id, Intent(context, MainActivity::class.java).putExtra(MainActivity.TAB, tab).putExtra(MainActivity.FILTER, filter),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, channel) else @Suppress("DEPRECATION") Notification.Builder(context)
@@ -139,6 +209,14 @@ object Alerts {
                     .setStyle(Notification.BigTextStyle().bigText(text))
                     .setContentIntent(open)
                     .setAutoCancel(true)
+                    // A count that changed is not a new alarm.
+                    .setOnlyAlertOnce(quiet)
+                    // On a locked screen: that something happened, never whose money or how much.
+                    .setVisibility(Notification.VISIBILITY_PRIVATE)
+                    .setPublicVersion(
+                        (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, channel) else @Suppress("DEPRECATION") Notification.Builder(context))
+                            .setSmallIcon(R.drawable.ic_notification).setContentTitle("جیرجیرک پیامک").setContentText("یک مورد تازه — برای دیدن، قفل گوشی را باز کنید.").build(),
+                    )
                     .apply { if (group != null) setGroup(group).setGroupSummary(summary) }
                     .build(),
             )

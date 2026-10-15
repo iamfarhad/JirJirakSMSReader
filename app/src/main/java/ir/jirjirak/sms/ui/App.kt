@@ -26,6 +26,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.ScrollState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -60,7 +63,7 @@ import kotlinx.coroutines.withContext
  * arriving, a background send — is on the screen the moment it is written.
  */
 @Composable
-fun App(resumed: Int, wantedTab: Int, tabRequest: Int = 0) {
+fun App(resumed: Int, wantedTab: Int, wantedFilter: Int = 0, tabRequest: Int = 0) {
     val context = LocalContext.current
     val store = remember { Store(context) }
     watchStore()
@@ -78,7 +81,11 @@ fun App(resumed: Int, wantedTab: Int, tabRequest: Int = 0) {
     var tab by rememberSaveable { mutableIntStateOf(wantedTab) }
     // Which filter «رسیدها» opens on when the dashboard sends the seller there.
     var receiptsFilter by rememberSaveable { mutableIntStateOf(0) }
-    LaunchedEffect(wantedTab, tabRequest) { tab = wantedTab }
+    LaunchedEffect(wantedTab, tabRequest) {
+        if (wantedTab < 0) return@LaunchedEffect
+        if (wantedTab == MainActivity.TAB_RECEIPTS) receiptsFilter = wantedFilter
+        tab = wantedTab
+    }
 
     LaunchedEffect(Unit) {
         // On opening, at most every 6 hours: the background beat asks too.
@@ -132,17 +139,22 @@ fun App(resumed: Int, wantedTab: Int, tabRequest: Int = 0) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Header(if (paired) store.shop else null)
-            when {
-                !paired -> PairScreen(store)
-                tab == MainActivity.TAB_REPORT -> ReportTab(store, now)
-                tab == MainActivity.TAB_RECEIPTS -> ReceiptsTab(store, now, receiptsFilter) { receiptsFilter = it }
-                tab == MainActivity.TAB_MORE -> MoreTab(store, now) { t, f -> receiptsFilter = f; tab = t }
-                else -> HomeTab(store, now, resumed) { t, f -> receiptsFilter = f; tab = t }
+            CompositionLocalProvider(LocalScroll provides scroll) {
+                when {
+                    !paired -> PairScreen(store)
+                    tab == MainActivity.TAB_REPORT -> ReportTab(store, now)
+                    tab == MainActivity.TAB_RECEIPTS -> ReceiptsTab(store, now, receiptsFilter) { receiptsFilter = it }
+                    tab == MainActivity.TAB_MORE -> MoreTab(store, now) { t, f -> receiptsFilter = f; tab = t }
+                    else -> HomeTab(store, now, resumed) { t, f -> receiptsFilter = f; tab = t }
+                }
             }
             Spacer(Modifier.size(4.dp))
         }
     }
 }
+
+/** The page's one scroll, for a screen that opens at its top (a receipt) and returns to its place (the list). */
+val LocalScroll = staticCompositionLocalOf<ScrollState?> { null }
 
 @Composable
 private fun Header(shop: String?) {
@@ -152,7 +164,7 @@ private fun Header(shop: String?) {
                 .size(50.dp)
                 .shadow(10.dp, RoundedCornerShape(16.dp), spotColor = Brand.Green.copy(alpha = 0.5f))
                 .clip(RoundedCornerShape(16.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF22C55E), Color(0xFF16A34A), Color(0xFF166534)))),
+                .background(Brush.linearGradient(listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF047857)))),
             contentAlignment = Alignment.Center,
         ) {
             Image(painterResource(R.drawable.ic_cricket), contentDescription = null, modifier = Modifier.size(50.dp))

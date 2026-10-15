@@ -54,7 +54,7 @@ class StatusWidget : AppWidgetProvider() {
 
         private fun draw(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val store = Store(context)
-            val (title, sub) = lines(store.endpoint != null, store.senders.size, store.lastPing, store.sentToday(), store.queue().size, System.currentTimeMillis())
+            val (title, sub) = lines(store.endpoint != null, store.senders.size, store.lastPing, store.sentToday(), store.queueSize(), System.currentTimeMillis())
             val open = PendingIntent.getActivity(
                 context, 50, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

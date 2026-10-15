@@ -69,6 +69,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -148,6 +151,8 @@ fun PairScreen(store: Store) {
             onValueChange = { typed = it },
             label = { Text("یا کد را اینجا بچسبانید") },
             singleLine = true,
+            // The code carries the shop's secret: no autocorrect, no keyboard learning it.
+            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
             modifier = Modifier.fillMaxWidth(),
         )
         if (typed.isNotBlank()) {
@@ -447,7 +452,7 @@ private fun FindBankSender(store: Store, onSeveral: () -> Unit) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("شمارهٔ پیامک بانک شما «" + Persian.sender(s.from) + "» است؟", lineHeight = 22.sp)
-                    s.preview?.let { Text(Persian.digits(it), color = Brand.Muted, fontSize = 12.sp, maxLines = 2) }
+                    s.preview?.let { Text(Persian.digits(it), color = Brand.Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
             },
             confirmButton = {
@@ -602,7 +607,7 @@ private fun PickSenderDialog(store: Store, onDone: (String?) -> Unit) {
                                 Text((if (s.bankish) "🏦 " else "") + Persian.sender(s.from), fontWeight = FontWeight.SemiBold, color = Brand.Ink, fontSize = 14.sp)
                                 Text(
                                     s.preview?.let { Persian.digits(it) } ?: "پیامک رمز — نمایش داده نمی‌شود",
-                                    color = Brand.Muted, fontSize = 12.sp, maxLines = 1,
+                                    color = Brand.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
                             TextButton(onClick = { onDone(s.from) }) { Text("افزودن") }

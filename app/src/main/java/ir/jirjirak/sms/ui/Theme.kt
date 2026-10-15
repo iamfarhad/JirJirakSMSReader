@@ -29,14 +29,18 @@ import ir.jirjirak.sms.Store
  * night, following the phone. Every colour reads [dark], which is Compose state, so a screen
  * redraws the moment the phone switches; many sellers leave this app open on a desk overnight.
  */
+/**
+ * Every foreground token reads at 4.5:1 or better (WCAG AA) on white and on its own soft tint, in both
+ * themes — measured, not guessed: the first emerald #059669 under white button text was 3.8:1.
+ */
 object Brand {
     var dark by mutableStateOf(false)
 
     private fun pick(light: Long, night: Long) = Color(if (dark) night else light)
 
-    val Green get() = pick(0xFF059669, 0xFF34D399)
+    val Green get() = pick(0xFF047857, 0xFF34D399)
     val Emerald get() = pick(0xFF10B981, 0xFF10B981)
-    val GreenDark get() = pick(0xFF047857, 0xFF6EE7B7)
+    val GreenDark get() = pick(0xFF065F46, 0xFF6EE7B7)
     val GreenSoft get() = pick(0xFFE9FAF2, 0xFF0F2E24)
     val Canvas get() = pick(0xFFF7F9FC, 0xFF0B1220)
     /** Cards, the tab bar, dialogs. */
@@ -45,11 +49,11 @@ object Brand {
     val Line get() = pick(0xFFE8EDF3, 0xFF22304A)
     val Ink get() = pick(0xFF11243E, 0xFFE6EDF7)
     val Muted get() = pick(0xFF64748B, 0xFF94A3B8)
-    val Good get() = pick(0xFF059669, 0xFF34D399)
+    val Good get() = pick(0xFF047857, 0xFF34D399)
     val GoodSoft get() = pick(0xFFE9FAF2, 0xFF0F2E24)
-    val Warn get() = pick(0xFFD97706, 0xFFFBBF24)
+    val Warn get() = pick(0xFFB45309, 0xFFFBBF24)
     val WarnSoft get() = pick(0xFFFFF4E0, 0xFF33270C)
-    val Bad get() = pick(0xFFEF4444, 0xFFF87171)
+    val Bad get() = pick(0xFFC42020, 0xFFF87171)
     val BadSoft get() = pick(0xFFFEECEC, 0xFF3A1717)
     val Blue get() = pick(0xFF2563EB, 0xFF60A5FA)
     val BlueSoft get() = pick(0xFFEAF1FE, 0xFF13233F)

@@ -94,6 +94,7 @@ object Net {
             if (!reply.ok) {
                 store.lastError = if (reply.revoked) "revoked" else "send"
                 if (reply.retryable) {
+                    store.bump(id)
                     store.updateEvent(id, "retry", "فرستاده نشد: " + reply.reason + " — دوباره تلاش می‌شود")
                     break
                 }
@@ -165,7 +166,9 @@ object Net {
         val store = Store(context)
         val body = JSONObject()
             .put("version", BuildConfig.VERSION_NAME)
-            .put("pending", store.queue().size)
+            .put("pending", store.queueSize())
+            // Which phone this is, when one shop has several (one per bank SIM).
+            .put("device", store.deviceId)
             .put("senders", JSONArray(store.senders))
             .put("model", Build.MANUFACTURER + " " + Build.MODEL)
             // Can this phone actually hear an SMS? Paired and pinging is not the same as receiving:

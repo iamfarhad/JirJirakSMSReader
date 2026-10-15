@@ -32,21 +32,44 @@ class Store(context: Context) {
         val revision = mutableIntStateOf(0)
 
         const val EVENTS_MAX = 200
+
+        /**
+         * The event log, parsed once per write instead of once per read: the dashboard, the report
+         * and the widget all read it, and every recomposition used to parse 200 JSON rows again.
+         *
+         * Keyed by the stored string itself (by reference — SharedPreferences hands back the very
+         * object it holds), not by [revision]: a counter read before and after a parse let a write in
+         * between file the old rows under the new number, and the next event() built on them.
+         */
+        @Volatile private var eventsCache: Pair<String, List<JSONObject>>? = null
+
+        /** Keyed by the outbox's own write counter, for the same reason. */
+        @Volatile private var sizeCache: Pair<Int, Int>? = null
+
+        private val REV = Any()
+
+        /** A Keystore that refused once is not asked again on every read of this run. */
+        @Volatile private var sealBroken = false
     }
 
-    private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences("jirjirak_sms", Context.MODE_PRIVATE)
+    private val app: Context = context.applicationContext
+
+    private val prefs: SharedPreferences = app.getSharedPreferences("jirjirak_sms", Context.MODE_PRIVATE)
 
     private fun commit(edit: SharedPreferences.Editor) {
         edit.apply()
-        revision.intValue++
+        bump()
     }
+
+    /** One more write, told to the screen. Locked: `++` from two threads at once loses one. */
+    private fun bump() = synchronized(REV) { revision.intValue++ }
 
     // ── pairing ─────────────────────────────────────────────────────────
 
+    /** The shop's ingest address — it carries the secret, so it is kept sealed (Secrets). */
     var endpoint: String?
-        get() = prefs.getString("endpoint", null)
-        set(v) = commit(prefs.edit().putString("endpoint", v))
+        get() = secret("endpoint")
+        set(v) = putSecret("endpoint", v)
 
     var shop: String?
         get() = prefs.getString("shop", null)
@@ -61,15 +84,24 @@ class Store(context: Context) {
         get() = runCatching { JSONObject(prefs.getString("shop_info", null) ?: "{}") }.getOrDefault(JSONObject())
         set(v) = commit(prefs.edit().putString("shop_info", v.toString()))
 
+    /** Does the paired bot understand this (its ping reply's `features`)? An older bot says nothing. */
+    fun supports(feature: String): Boolean =
+        shopInfo.optJSONArray("features")?.let { a -> (0 until a.length()).any { a.optString(it) == feature } } ?: false
+
     /**
      * Unpaired: nothing more goes anywhere. The queue goes (it was for that shop); the events stay,
      * so the seller can still read what happened.
      */
     fun unpair() = synchronized(LOCK) {
+        Outbox.get(app).clear()
         commit(
             prefs.edit().remove("endpoint").remove("shop").remove("shop_info").remove("queue")
                 .remove("last_error").remove("latest_from_bot").remove("manage_key").remove("manage_key_revoked")
-                .remove("battery_warned").remove("offline_warned"),
+                .remove("battery_warned").remove("offline_warned")
+                // Recovery starts over with the next shop: SMS from while this phone was nobody's
+                // must not be sent to whoever it is paired with next.
+                .remove("recovery_on").remove("recovery_from").remove("last_recovery")
+                .remove("told_pending").remove("told_mismatch"),
         )
     }
 
@@ -130,8 +162,8 @@ class Store(context: Context) {
 
     /** The bot's second key, for deciding receipts from the app («رسیدها»). Null until pasted. */
     var manageKey: String?
-        get() = prefs.getString("manage_key", null)
-        set(v) = commit(prefs.edit().putString("manage_key", v))
+        get() = secret("manage_key")
+        set(v) = putSecret("manage_key", v)
 
     /** The bot refused the manage key (401): the tab asks for a fresh one, and says why. */
     var manageKeyRevoked: Boolean
@@ -140,15 +172,71 @@ class Store(context: Context) {
 
     fun revokeManageKey() = commit(prefs.edit().remove("manage_key").putBoolean("manage_key_revoked", true))
 
-    /** The seller said they switched on the vendor's «Autostart» — the phone has no way to tell us. */
     /** «ظاهر»: "system" (follow the phone), "light" or "dark". */
     var theme: String
         get() = prefs.getString("theme", "system") ?: "system"
         set(v) = commit(prefs.edit().putString("theme", v))
 
+    /** The seller said they switched on the vendor's «Autostart» — the phone has no way to tell us. */
     var autostartConfirmed: Boolean
         get() = prefs.getBoolean("autostart_confirmed", false)
         set(v) = commit(prefs.edit().putBoolean("autostart_confirmed", v))
+
+    /**
+     * This install, as the bot tells several phones of one shop apart. Made once, never sent anywhere
+     * but the shop's own bot, and not derived from anything about the phone.
+     */
+    val deviceId: String
+        get() = prefs.getString("device_id", null) ?: synchronized(LOCK) {
+            prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
+                prefs.edit().putString("device_id", it).commit()
+            }
+        }
+
+    // ── recovery: SMS that arrived while the app could not hear them ────
+
+    /** «بازیابی پیامک‌های جامانده» — off until the seller turns it on (it needs READ_SMS). */
+    var recoveryOn: Boolean
+        get() = prefs.getBoolean("recovery_on", false)
+        set(v) = commit(prefs.edit().putBoolean("recovery_on", v))
+
+    /**
+     * Nothing older than this is ever recovered: the moment recovery was turned on. SMS before it were
+     * the old app's business, and resending them could make yesterday's deposit look like today's.
+     */
+    var recoveryFrom: Long
+        get() = prefs.getLong("recovery_from", 0)
+        set(v) = commit(prefs.edit().putLong("recovery_from", v))
+
+    var lastRecovery: Long
+        get() = prefs.getLong("last_recovery", 0)
+        set(v) = commit(prefs.edit().putLong("last_recovery", v))
+
+    // ── notifications the seller chose ──────────────────────────────────
+
+    /** «رسید منتظر بررسی» — on by default once the manage key is in. */
+    var notifyReview: Boolean
+        get() = prefs.getBoolean("notify_review", true)
+        set(v) = commit(prefs.edit().putBoolean("notify_review", v))
+
+    /** «واریز بدون فاکتور / پیامک خوانده‌نشده». */
+    var notifyMismatch: Boolean
+        get() = prefs.getBoolean("notify_mismatch", true)
+        set(v) = commit(prefs.edit().putBoolean("notify_mismatch", v))
+
+    /** No review/mismatch notification between 23:00 and 08:00; they wait for the morning. */
+    var quietNights: Boolean
+        get() = prefs.getBoolean("quiet_nights", false)
+        set(v) = commit(prefs.edit().putBoolean("quiet_nights", v))
+
+    /** What the last notification already told — a count told once is not told again. */
+    var toldPending: Int
+        get() = prefs.getInt("told_pending", 0)
+        set(v) = commit(prefs.edit().putInt("told_pending", v))
+
+    var toldMismatch: Int
+        get() = prefs.getInt("told_mismatch", 0)
+        set(v) = commit(prefs.edit().putInt("told_mismatch", v))
 
     // ── updates ─────────────────────────────────────────────────────────
 
@@ -199,7 +287,21 @@ class Store(context: Context) {
      * retry | ok | warn | info), from, title, detail, body (sms only, first 160 chars — it is the
      * seller's own phone), verdict (the bot's word on an SMS).
      */
-    fun events(): List<JSONObject> = migrateLog().let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }
+    fun events(): List<JSONObject> {
+        if (prefs.contains("log")) migrateLog()
+        val raw = prefs.getString("events", null) ?: return emptyList()
+        eventsCache?.let { (at, rows) -> if (at === raw) return rows }
+        return parseEvents(raw).also { eventsCache = raw to it }
+    }
+
+    /** New objects every call — for the writers, which change rows and must not touch the cached ones. */
+    private fun freshEvents(): List<JSONObject> {
+        if (prefs.contains("log")) migrateLog()
+        return parseEvents(prefs.getString("events", null))
+    }
+
+    private fun parseEvents(raw: String?): List<JSONObject> =
+        runCatching { JSONArray(raw ?: "[]") }.getOrDefault(JSONArray()).let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }
 
     fun event(
         kind: String, status: String, title: String, detail: String? = null,
@@ -211,7 +313,7 @@ class Store(context: Context) {
             if (detail != null) row.put("detail", detail)
             if (from != null) row.put("from", from)
             if (body != null) row.put("body", body.take(400))
-            val items = listOf(row) + events()
+            val items = listOf(row) + freshEvents()
             commit(prefs.edit().putString("events", JSONArray(items.take(EVENTS_MAX)).toString()))
         }
         return id
@@ -220,7 +322,7 @@ class Store(context: Context) {
     /** Move an SMS event along: queued → sent (with the bot's verdict) / retry / failed. */
     fun updateEvent(id: String, status: String, detail: String? = null, verdict: String? = null) = synchronized(LOCK) {
         var found = false
-        val items = events().map {
+        val items = freshEvents().map {
             if (it.optString("id") == id) {
                 found = true
                 it.put("status", status)
@@ -264,25 +366,78 @@ class Store(context: Context) {
 
     // ── the queue: SMS waiting for a connection ─────────────────────────
 
-    fun enqueue(item: JSONObject) = synchronized(LOCK) {
-        val q = array("queue")
-        q.put(item)
-        while (q.length() > 500) q.remove(0)
-        commit(prefs.edit().putString("queue", q.toString()))
+    /** The queue's database, with the 1.1 JSON queue moved into it the first time it is opened. */
+    private fun outbox(): Outbox {
+        val box = Outbox.get(app)
+        if (prefs.contains("queue")) synchronized(LOCK) {
+            // The JSON goes only once every SMS in it is in the database: a full disk keeps it for
+            // the next try instead of losing a day's deposits.
+            if (prefs.contains("queue") && box.migrate(prefs.getString("queue", null))) {
+                prefs.edit().remove("queue").commit()
+            }
+        }
+        return box
     }
 
-    fun queue(): List<JSONObject> = synchronized(LOCK) { array("queue") }.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }
+    /** Queue one SMS; false when this same SMS ([fingerprint]) was queued before. */
+    fun enqueue(item: JSONObject, fingerprint: String? = null): Boolean =
+        outbox().enqueue(item, fingerprint).also { if (it) bump() }
 
-    /**
-     * Take one delivered SMS off the queue, by its id — not «the first n»: the 500-cap trim or a
-     * re-pair can move the queue under a flush, and dropping by count would then drop unsent ones.
-     */
-    fun remove(id: String) = synchronized(LOCK) {
-        val rest = queue().filter { it.optString("id") != id }
-        commit(prefs.edit().putString("queue", JSONArray(rest).toString()))
+    fun queue(): List<JSONObject> = outbox().all()
+
+    /** Cached per write like the events: the dashboard and the widget ask on every frame. */
+    fun queueSize(): Int {
+        val box = outbox()
+        val version = box.version
+        sizeCache?.let { (at, n) -> if (at == version) return n }
+        return box.size().also { sizeCache = version to it }
     }
+
+    /** Take one delivered SMS off the queue, by its id — never «the first n». */
+    fun remove(id: String) {
+        outbox().remove(id)
+        bump()
+    }
+
+    fun bump(id: String) = outbox().bump(id)
+
+    fun seen(fingerprint: String): Boolean = outbox().seen(fingerprint)
+
+    fun markSeen(fingerprint: String) = outbox().markSeen(fingerprint)
+
+    fun pruneSeen() = outbox().prune()
 
     // ── helpers ─────────────────────────────────────────────────────────
+
+    /** A sealed value, opened; a 1.1 plaintext one sealed in place the first time it is read. */
+    private fun secret(key: String): String? {
+        val stored = prefs.getString(key, null) ?: return null
+        if (!Secrets.isSealed(stored) && !sealBroken) {
+            runCatching { Secrets.seal(stored) }
+                // Written back only if nobody changed it meanwhile — an unpair or a new pairing wins.
+                .onSuccess { sealed -> synchronized(LOCK) { if (prefs.getString(key, null) == stored) prefs.edit().putString(key, sealed).apply() } }
+                .onFailure { sealBroken = true }
+            return stored
+        }
+        val plain = Secrets.open(stored)
+        if (plain == null) {
+            // Sealed with a key this phone does not have (data moved from another phone): say so and
+            // start over, rather than look paired and drop every SMS without a word.
+            synchronized(LOCK) {
+                if (prefs.getString(key, null) == stored) {
+                    commit(prefs.edit().remove(key))
+                    event("system", "warn", if (key == "endpoint") "کد اتصال روی این گوشی باز نشد" else "کد مدیریت روی این گوشی باز نشد",
+                        "اطلاعات برنامه از گوشی دیگری منتقل شده است. کد را دوباره از ربات بچسبانید.")
+                }
+            }
+        }
+        return plain
+    }
+
+    private fun putSecret(key: String, value: String?) {
+        val stored = value?.let { v -> if (sealBroken) v else runCatching { Secrets.seal(v) }.getOrElse { sealBroken = true; v } }
+        commit(prefs.edit().putString(key, stored))
+    }
 
     private fun array(key: String): JSONArray =
         try { JSONArray(prefs.getString(key, "[]")) } catch (e: Exception) { JSONArray() }

@@ -58,6 +58,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.jirjirak.sms.Money
@@ -82,22 +87,77 @@ fun ReceiptsTab(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit) {
         return
     }
     var open by rememberSaveable { mutableStateOf<Long?>(null) }
+    // A deposit being tied to a receipt, or an unread SMS being taught: the whole row travels, it
+    // carries the SMS text and its numbers.
+    var assigning by remember { mutableStateOf<Receipts.Item?>(null) }
+    var teaching by remember { mutableStateOf<Receipts.Item?>(null) }
     var refreshTick by remember { mutableIntStateOf(0) }
+    // What just happened, said once on the list — a deposit tied, an SMS set aside — then gone.
+    var flash by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(flash) { if (flash != null) { kotlinx.coroutines.delay(5000); flash = null } }
+    val route: Route = when {
+        assigning != null -> Route.Assign(assigning!!)
+        teaching != null -> Route.Teach(teaching!!)
+        open != null -> Route.Receipt(open!!)
+        else -> Route.List
+    }
 
-    AnimatedContent(targetState = open, label = "receipt") { id ->
+    // A screen opens at its top; the list comes back where it was left.
+    val scroll = LocalScroll.current
+    var listAt by remember { mutableIntStateOf(0) }
+    var shown by remember { mutableStateOf<Route>(Route.List) }
+    LaunchedEffect(route) {
+        if (scroll != null && route != shown) {
+            if (shown == Route.List) listAt = scroll.value
+            scroll.scrollTo(if (route == Route.List) listAt else 0)
+        }
+        shown = route
+    }
+
+    // Each pane is drawn from ITS route — the one leaving keeps its own screen while it animates out,
+    // instead of reading today's state and drawing (and loading) a second list.
+    AnimatedContent(targetState = route, contentKey = { it.key }, label = "receipts") { r ->
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (id != null) {
-                BackHandler { open = null }
-                ReceiptDetailScreen(store, id, now, onBack = { open = null }, onDecided = { refreshTick++ })
-            } else {
-                ReceiptsCentre(store, now, filter, onFilter, refreshTick) { open = it }
+            when (r) {
+                is Route.Assign -> {
+                    BackHandler { assigning = null }
+                    AssignScreen(store, r.deposit, now, onBack = { assigning = null }, onDone = { msg -> assigning = null; flash = msg; refreshTick++ })
+                }
+                is Route.Teach -> {
+                    BackHandler { teaching = null }
+                    TeachScreen(store, r.sms, now, onBack = { teaching = null }, onDone = { teaching = null; refreshTick++ })
+                }
+                is Route.Receipt -> {
+                    BackHandler { open = null }
+                    ReceiptDetailScreen(store, r.id, now, onBack = { open = null }, onDecided = { refreshTick++ })
+                }
+                Route.List -> ReceiptsCentre(
+                    store, now, filter, onFilter, refreshTick, flash,
+                    onOpen = { open = it },
+                    onAssign = { assigning = it },
+                    onTeach = { teaching = it },
+                    onChanged = { msg -> flash = msg; refreshTick++ },
+                )
             }
         }
     }
 }
 
+/** Where the receipts tab is: the list, one receipt, tying a deposit, teaching an SMS. */
+private sealed interface Route {
+    val key: String
+
+    data object List : Route { override val key = "list" }
+    data class Receipt(val id: Long) : Route { override val key = "receipt:$id" }
+    data class Assign(val deposit: Receipts.Item) : Route { override val key = "assign:" + deposit.id }
+    data class Teach(val sms: Receipts.Item) : Route { override val key = "teach:" + sms.id }
+}
+
 @Composable
-private fun ReceiptsCentre(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit, refreshTick: Int, onOpen: (Long) -> Unit) {
+private fun ReceiptsCentre(
+    store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit, refreshTick: Int, flash: String?,
+    onOpen: (Long) -> Unit, onAssign: (Receipts.Item) -> Unit, onTeach: (Receipts.Item) -> Unit, onChanged: (String?) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var week by remember { mutableStateOf<Receipts.Summary?>(null) }
@@ -136,10 +196,11 @@ private fun ReceiptsCentre(store: Store, now: Long, filter: Int, onFilter: (Int)
             SummaryCell("کل رسیدها", m?.let { it.autoApproved + it.manualApproved + it.rejected + it.needsReview }, "۷ روز اخیر", Tone.info, Modifier.weight(1f))
             SummaryCell("تأیید خودکار", m?.autoApproved, "۷ روز اخیر", Tone.good, Modifier.weight(1f))
             SummaryCell("نیازمند بررسی", m?.needsReview, "در صف انتظار", Tone.warn, Modifier.weight(1f))
-            SummaryCell("مغایرت", m?.unmatched, "واریز بی‌فاکتور", Tone.bad, Modifier.weight(1f))
+            SummaryCell("مغایرت", week?.openMismatch, "در فهرست مغایرت", Tone.bad, Modifier.weight(1f))
         }
     }
     Segmented(FILTERS.map { it.second }, filter, onFilter)
+    flash?.let { Notice(it, Brand.GoodSoft, Brand.Good) }
 
     error?.let { ErrorState(it) { load(1) } }
     val list = items
@@ -158,7 +219,10 @@ private fun ReceiptsCentre(store: Store, now: Long, filter: Int, onFilter: (Int)
             )
         }
         list != null -> {
-            list.forEach { item -> if (item.isDeposit) DepositCard(item, now) else ReceiptRow(item, now) { onOpen(item.id) } }
+            list.forEach { item ->
+                if (item.isDeposit) DepositCard(store, item, now, onAssign = { onAssign(item) }, onTeach = { onTeach(item) }, onChanged = onChanged)
+                else ReceiptRow(item, now) { onOpen(item.id) }
+            }
             if (more) {
                 OutlinedButton(onClick = { load(page + 1) }, enabled = !loading, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
                     Text(if (loading) "در حال دریافت…" else "نمایش بیشتر")
@@ -181,8 +245,8 @@ private fun SummaryCell(label: String, value: Int?, sub: String, tone: Tone, mod
             tone, 32,
         )
         if (value == null) Skeleton(Modifier.width(28.dp), height = 22) else Text(Persian.number(value), color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        Text(label, color = Brand.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        Text(sub, color = Brand.Muted, fontSize = 10.sp, maxLines = 1)
+        Text(label, color = Brand.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(sub, color = Brand.Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -202,8 +266,8 @@ private fun ReceiptRow(r: Receipts.Item, now: Long, onOpen: () -> Unit) {
             IconChip(Icons.Filled.AccountCircle, tone, 44)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(r.customer ?: "مشتری", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                Text(listOfNotNull(r.tracking?.let { "سفارش " + Persian.latin(it) }, r.title).joinToString(" · "), color = Brand.Muted, fontSize = 12.sp, maxLines = 1)
+                Text(r.customer ?: "مشتری", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(r.tracking?.let { "سفارش " + Persian.latin(it) }, r.title).joinToString(" · "), color = Brand.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             StatusBadge(label, tone)
         }
@@ -216,29 +280,10 @@ private fun ReceiptRow(r: Receipts.Item, now: Long, onOpen: () -> Unit) {
             Spacer(Modifier.width(6.dp))
             Text(
                 Persian.digits(r.reason ?: if (r.score != null) "امتیاز " + r.score + " از " + (r.threshold ?: 70) else r.rail ?: ""),
-                color = Brand.Muted, fontSize = 12.sp, maxLines = 1, modifier = Modifier.weight(1f),
+                color = Brand.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             )
             OutlinedButton(onClick = onOpen, shape = RoundedCornerShape(12.dp)) { Text("مشاهده", fontSize = 13.sp) }
         }
-    }
-}
-
-/** A bank deposit no invoice claimed, or an SMS that could not be read. */
-@Composable
-private fun DepositCard(d: Receipts.Item, now: Long) {
-    val unreadable = d.state == "unparsed"
-    AppCard(padding = 14) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconChip(if (unreadable) Icons.Filled.Warning else Icons.Filled.Info, if (unreadable) Tone.warn else Tone.bad, 40)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(if (unreadable) "پیامک بانکی خوانده نشد" else "واریز بدون فاکتور", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(listOfNotNull(d.sender?.let { "از " + Persian.sender(it) }, Persian.day(d.at, now) + " " + Persian.clock(d.at)).joinToString(" · "), color = Brand.Muted, fontSize = 12.sp)
-            }
-            StatusBadge("مغایرت", if (unreadable) Tone.warn else Tone.bad)
-        }
-        if (d.amount != null) Text(Money.toman(d.amount), color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-        d.note?.let { Text(Persian.digits(it), color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp) }
     }
 }
 
@@ -466,6 +511,8 @@ private fun ManageKeyCard(store: Store, revoked: Boolean) {
         store.manageKey = key
         store.manageKeyRevoked = false
         store.event("system", "ok", "تأیید و رد رسید از اپ فعال شد")
+        // The code can approve payments: it does not stay on the clipboard for the next app to read.
+        if (clipboard.getText()?.text?.let { Receipts.parseCode(it) } == key) clipboard.setText(AnnotatedString(""))
     }
 
     Section("تأیید و رد رسید از همین اپ", Icons.Filled.Lock) {
@@ -482,7 +529,13 @@ private fun ManageKeyCard(store: Store, revoked: Boolean) {
             onClick = { take(clipboard.getText()?.text) },
             modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
         ) { Text("📋 چسباندن کد مدیریت") }
-        OutlinedTextField(value = typed, onValueChange = { typed = it }, label = { Text("یا کد را اینجا بچسبانید") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        // Masked, and kept out of the keyboard's learning: it is a key, not a word.
+        OutlinedTextField(
+            value = typed, onValueChange = { typed = it }, label = { Text("یا کد را اینجا بچسبانید") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth(),
+        )
         if (typed.isNotBlank()) {
             OutlinedButton(onClick = { take(typed) }, modifier = Modifier.fillMaxWidth()) { Text("فعال کن") }
         }

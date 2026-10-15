@@ -65,7 +65,7 @@ object Receipts {
         else -> Result.Failed(
             runCatching { JSONObject(text).optString("message") }.getOrNull()
                 ?.takeIf { m -> m.any { it in '\u0600'..'\u06FF' } }
-                ?: "ربات جواب نداد ($code)",
+                ?: "ربات جواب نداد (" + ir.jirjirak.sms.ui.Persian.number(code) + ")",
         )
     }
 
@@ -130,6 +130,9 @@ object Receipts {
 
     data class Bank(val sender: String, val count: Int, val total: Long)
 
+    /** One phone of the shop, as the bot last heard it. [mine] is this phone. */
+    data class Device(val model: String, val at: Long, val quiet: Boolean, val senders: Int, val version: String, val mine: Boolean)
+
     data class Summary(
         val autoOn: Boolean,
         val levelLabel: String,
@@ -139,6 +142,9 @@ object Receipts {
         val recent: List<Activity>,
         val series: List<Day>,
         val banks: List<Bank>,
+        val devices: List<Device> = emptyList(),
+        /** Everything in the «مغایرت» list right now — deposits no invoice claimed and unread SMS. */
+        val openMismatch: Int = 0,
     )
 
     /** One row of the receipts centre: a receipt (a payment) or, under «مغایرت», a bank deposit. */
@@ -159,7 +165,17 @@ object Receipts {
         val threshold: Int?,
         val hasImage: Boolean,
         val note: String?,
+        /** An unread bank SMS: its text and its numbers, for «آموزش قالب». Null on everything else. */
+        val raw: String? = null,
+        val numbers: List<Number> = emptyList(),
+        /** Read by a format the seller taught. */
+        val learned: Boolean = false,
     )
+
+    /** One number in an SMS, by its place — what the seller taps as the amount or the balance. */
+    data class Number(val slot: Int, val text: String)
+
+    data class Format(val id: Long, val sender: String, val sample: String, val unit: String, val amountSlot: Int, val balanceSlot: Int?, val hits: Int, val lastHit: Long)
 
     data class Page(val items: List<Item>, val hasMore: Boolean)
 
@@ -204,6 +220,11 @@ object Receipts {
             recent = o.list("recent") { Activity(it.optString("kind"), it.optLong("at") * 1000, it.optLong("amount"), it.str("customer"), it.str("sender"), it.optLong("id")) },
             series = o.list("series") { Day(it.optString("date"), it.optInt("auto"), it.optInt("manual"), it.optLong("total")) },
             banks = o.list("banks") { Bank(it.optString("sender"), it.optInt("count"), it.optLong("total")) },
+            devices = o.optJSONObject("health")?.list("devices") {
+                Device(it.optString("model"), it.optLong("at") * 1000, it.optBoolean("quiet"), it.optInt("senders"), it.optString("version"), it.optBoolean("this"))
+            } ?: emptyList(),
+            openMismatch = o.optJSONObject("open")?.optInt("mismatch")
+                ?: o.list("actions") { if (it.optString("kind") in setOf("unmatched", "unreadable")) it.optInt("count") else 0 }.sum(),
         )
     }
 
@@ -227,7 +248,46 @@ object Receipts {
             threshold = auto?.optInt("threshold"),
             hasImage = o.optBoolean("has_image"),
             note = o.str("note"),
+            raw = o.str("raw"),
+            numbers = o.list("numbers") { Number(it.optInt("slot"), it.optString("text")) },
+            learned = o.optBoolean("learned"),
         )
+    }
+
+    /** Parse `…/candidates`: the deposit and the receipts it could pay. Pure: unit-tested. */
+    fun parseCandidates(body: String): Pair<Item, List<Item>> {
+        val o = JSONObject(body)
+        return item(o.optJSONObject("deposit")?.put("kind", "deposit") ?: JSONObject()) to o.list("items") { item(it) }
+    }
+
+    /** Parse `…/formats`. Pure: unit-tested. */
+    fun parseFormats(body: String): List<Format> = JSONObject(body).list("formats") {
+        Format(
+            it.optLong("id"), it.optString("sender"), it.optString("sample"), it.optString("unit"), it.optInt("amount_slot"),
+            if (it.isNull("balance_slot")) null else it.optInt("balance_slot"), it.optInt("hits"), it.optLong("last_hit_at") * 1000,
+        )
+    }
+
+    /** «اتصال به رسید»: done, or the amounts differ (ask again), or refused with the bot's reason. */
+    sealed interface Assign {
+        data object Done : Assign
+        data class AmountDiffers(val deposit: Long, val expected: Long) : Assign
+        data class Refused(val message: String) : Assign
+        data object NeedKey : Assign
+    }
+
+    /** What an assign reply means. Pure: unit-tested. */
+    fun assignOutcome(code: Int, text: String): Assign {
+        val j = runCatching { JSONObject(text) }.getOrNull()
+        return when {
+            code in 200..299 -> Assign.Done
+            code == 401 -> Assign.NeedKey
+            code == 422 && j?.optString("error") == "amount_differs" -> Assign.AmountDiffers(j.optLong("deposit_amount"), j.optLong("expected"))
+            else -> Assign.Refused(
+                j?.optString("message")?.takeIf { m -> m.any { it in '\u0600'..'\u06FF' } }
+                    ?: (outcome(code, text) { } as? Result.Failed)?.message ?: "انجام نشد (" + ir.jirjirak.sms.ui.Persian.number(code) + ")",
+            )
+        }
     }
 
     /** Parse `…/receipts/history`. Pure: unit-tested. */
@@ -263,6 +323,26 @@ object Receipts {
     fun detail(context: Context, id: Long): Result<Detail> = call(context, "GET", "/$id") { parseDetail(it) }
 
     fun reasons(context: Context): Result<List<Reason>> = call(context, "GET", "/reasons") { parseReasons(it) }
+
+    fun candidates(context: Context, deposit: Long): Result<Pair<Item, List<Item>>> =
+        call(context, "GET", "/candidates?deposit=$deposit") { parseCandidates(it) }
+
+    fun assign(context: Context, payment: Long, deposit: Long, acceptDifference: Boolean): Assign {
+        val (code, text) = raw(context, "POST", "/$payment/assign", JSONObject().put("deposit", deposit).put("accept_difference", acceptDifference))
+            ?: return Assign.NeedKey
+        return if (code == 0) Assign.Refused(text) else assignOutcome(code, text)
+    }
+
+    fun ignore(context: Context, deposit: Long): Result<Unit> = call(context, "POST", "/deposits/$deposit/ignore") { }
+
+    fun formats(context: Context): Result<List<Format>> = call(context, "GET", "/formats") { parseFormats(it) }
+
+    /** Teach a format; the answer is how many recent unread SMS it read again. */
+    fun teach(context: Context, deposit: Long, amountSlot: Int, balanceSlot: Int?, unit: String): Result<Int> =
+        call(context, "POST", "/formats", JSONObject().put("deposit", deposit).put("amount_slot", amountSlot)
+            .put("balance_slot", balanceSlot ?: JSONObject.NULL).put("unit", unit)) { JSONObject(it).optInt("reread") }
+
+    fun forgetFormat(context: Context, id: Long): Result<Unit> = call(context, "DELETE", "/formats/$id") { }
 
     fun approve(context: Context, id: Long): Result<Unit> = call(context, "POST", "/$id/approve") { }
 
@@ -302,7 +382,14 @@ object Receipts {
     }
 
     private fun <T> call(context: Context, method: String, path: String, body: JSONObject? = null, parse: (String) -> T): Result<T> {
-        val (base, key) = target(context) ?: return Result.NeedKey
+        val (code, text) = raw(context, method, path, body) ?: return Result.NeedKey
+        if (code == 0) return Result.Failed(text)
+        return runCatching { outcome(code, text, parse) }.getOrElse { Result.Failed("پاسخ ربات خوانده نشد.") }
+    }
+
+    /** The status and body; code 0 with the reason when nothing came back; null without a key. */
+    private fun raw(context: Context, method: String, path: String, body: JSONObject?): Pair<Int, String>? {
+        val (base, key) = target(context) ?: return null
         return try {
             val con = URL(base + path).openConnection() as HttpURLConnection
             try {
@@ -311,6 +398,7 @@ object Receipts {
                 con.requestMethod = method
                 con.setRequestProperty("Accept", "application/json")
                 con.setRequestProperty("X-Manage-Key", key)
+                con.setRequestProperty("X-Device", Store(context).deviceId)
                 con.setRequestProperty("User-Agent", "jirjirak-sms/" + BuildConfig.VERSION_NAME)
                 if (body != null) {
                     con.doOutput = true
@@ -319,12 +407,12 @@ object Receipts {
                 }
                 val code = con.responseCode
                 val text = (if (code < 400) con.inputStream else con.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-                outcome(code, text, parse)
+                code to text
             } finally {
                 con.disconnect()
             }
         } catch (e: Exception) {
-            Result.Failed(Net.describe(e))
+            0 to Net.describe(e)
         }
     }
 }

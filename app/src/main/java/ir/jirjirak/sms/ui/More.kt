@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -50,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.jirjirak.sms.Beat
@@ -72,6 +74,9 @@ fun MoreTab(store: Store, now: Long, onNavigate: (tab: Int, filter: Int) -> Unit
     QuickActions(store, now, onNavigate)
     SubscriptionCard(store, now) {}
     SecurityCard(store)
+    RecoveryCard(store, now)
+    NotificationsCard(store)
+    FormatsCard(store)
     UpdateCard(store, now)
     AppearanceCard(store)
     JirjirakCard()
@@ -84,14 +89,14 @@ fun MoreTab(store: Store, now: Long, onNavigate: (tab: Int, filter: Int) -> Unit
 /** Whose phone this is working for — names only: no pairing code, no key, ever. */
 @Composable
 private fun ShopProfileCard(store: Store, now: Long) {
-    val alive = store.lastPing > 0 && now - store.lastPing < 30 * 60_000L
+    val alive = store.lastPing > 0 && now - store.lastPing < ir.jirjirak.sms.Alerts.OFFLINE_MS
     AppCard {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             IconChip(Icons.Filled.Home, Tone.good, 52)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(store.shop ?: "فروشگاه", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1)
-                Text(store.server?.let { Persian.latin(it) } ?: "—", color = Brand.Muted, fontSize = 12.sp, maxLines = 1)
+                Text(store.shop ?: "فروشگاه", color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(store.server?.let { Persian.latin(it) } ?: "—", color = Brand.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             StatusBadge(if (alive) "متصل" else "بی‌خبر", if (alive) Tone.good else Tone.warn)
         }
@@ -107,8 +112,7 @@ private fun QuickActions(store: Store, now: Long, onNavigate: (Int, Int) -> Unit
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
-    AppCard {
-        SectionHeader("دسترسی سریع")
+    Section("دسترسی سریع", Icons.Filled.Star, Brand.Blue) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             QuickTile("رسیدهای منتظر", Icons.Filled.DateRange, Tone.warn, Modifier.weight(1f)) { onNavigate(MainActivity.TAB_RECEIPTS, 1) }
             QuickTile("مغایرت‌ها", Icons.Filled.Warning, Tone.bad, Modifier.weight(1f)) { onNavigate(MainActivity.TAB_RECEIPTS, 3) }
@@ -129,7 +133,7 @@ private fun QuickTile(label: String, icon: androidx.compose.ui.graphics.vector.I
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         IconChip(icon, tone, 36)
-        Text(label, color = Brand.Ink, fontSize = 11.sp, maxLines = 2, lineHeight = 14.sp, textAlign = TextAlign.Center)
+        Text(label, color = Brand.Ink, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp, textAlign = TextAlign.Center)
     }
 }
 
@@ -143,8 +147,7 @@ private fun QuickTile(label: String, icon: androidx.compose.ui.graphics.vector.I
 private fun SecurityCard(store: Store) {
     watchStore()
     var forgetting by remember { mutableStateOf(false) }
-    AppCard {
-        SectionHeader("امنیت و دسترسی‌ها")
+    Section("امنیت و دسترسی‌ها", Icons.Filled.Lock, Brand.Green) {
         SecurityRow("ارسال پیامک‌های بانکی", if (store.endpoint != null) "فعال" else "وصل نیست", store.endpoint != null)
         SecurityRow(
             "تأیید و رد رسید از اپ",

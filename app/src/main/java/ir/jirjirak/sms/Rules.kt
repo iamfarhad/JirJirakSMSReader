@@ -108,6 +108,20 @@ object Rules {
 
     fun looksLikeBank(body: String): Boolean = canon(body).let { b -> BANKISH.any { b.contains(it) } }
 
+    /**
+     * One SMS, however it reached the app: the receiver hears it, [Recovery] finds it in the inbox,
+     * and both must call it the same thing or it is sent twice. Sender (any spelling), text, and the
+     * SMS centre's own timestamp — the receiver's `timestampMillis` and the inbox's `date_sent` are
+     * that same stamp. The stamp is what keeps two real deposits with identical text (a bank that
+     * prints neither balance nor time, the same amount on two days) from being taken for one.
+     */
+    fun fingerprint(sender: String, body: String, sentAtMillis: Long): String {
+        val who = variants(sender).minOrNull() ?: normalize(sender)
+        val raw = who + "\n" + canon(body).trim() + "\n" + (sentAtMillis / 1000)
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
     /** Forward this SMS? Only from a chosen sender, and never a password. */
     fun shouldForward(sender: String, body: String, allowed: Collection<String>): Boolean =
         isAllowed(sender, allowed) && !isSecret(body)

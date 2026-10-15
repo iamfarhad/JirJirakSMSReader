@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -108,7 +109,7 @@ fun SectionHeader(title: String, count: Int? = null, action: String? = null, onA
         }
         Spacer(Modifier.weight(1f))
         if (action != null) {
-            Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onAction).padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onAction).heightIn(min = 48.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(action, color = Brand.Blue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, tint = Brand.Blue, modifier = Modifier.size(18.dp))
             }
@@ -124,6 +125,12 @@ fun IconChip(icon: ImageVector, tone: Tone, size: Int = 40) {
     }
 }
 
+/** A small round dot in a tone — a phone online or quiet, a line's state at a glance. */
+@Composable
+fun StatusDot(tone: Tone, size: Int = 8) {
+    Box(Modifier.size(size.dp).clip(CircleShape).background(tone.fg))
+}
+
 /** «✓ تأیید شده», «⏱ نیازمند بررسی»… */
 @Composable
 fun StatusBadge(text: String, tone: Tone, icon: ImageVector? = null) {
@@ -135,7 +142,7 @@ fun StatusBadge(text: String, tone: Tone, icon: ImageVector? = null) {
             Icon(icon, contentDescription = null, tint = tone.fg, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
         }
-        Text(text, color = tone.fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(text, color = tone.fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -167,9 +174,12 @@ fun HeroStatus(title: String, text: String, tone: Tone, icon: ImageVector, alive
                 Text(text, color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp)
             }
             Spacer(Modifier.width(12.dp))
-            val scale = if (alive) pulse else 1f
+            // Scaled as a drawing, not as a size: a size that changes every frame re-measured the row and
+            // re-wrapped the text beside it, back and forth, for as long as Home was open.
             Box(
-                Modifier.size((64 * scale).dp).clip(RoundedCornerShape(20.dp)).background(tone.fg.copy(alpha = 0.14f)),
+                Modifier.size(64.dp)
+                    .graphicsLayer { val k = if (alive) pulse else 1f; scaleX = k; scaleY = k }
+                    .clip(RoundedCornerShape(20.dp)).background(tone.fg.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(icon, contentDescription = null, tint = tone.fg, modifier = Modifier.size(34.dp))
@@ -193,7 +203,7 @@ fun MetricCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconChip(icon, tone, 30)
                 Spacer(Modifier.width(6.dp))
-                Text(label, color = Brand.Muted, fontSize = 11.sp, maxLines = 2, lineHeight = 14.sp)
+                Text(label, color = Brand.Muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp)
             }
             Text(value, color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(unit, color = Brand.Muted, fontSize = 11.sp)
@@ -219,8 +229,8 @@ fun ActionRow(icon: ImageVector, tone: Tone, title: String, subtitle: String?, t
         IconChip(icon, tone, 38)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = Brand.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2)
-            if (subtitle != null) Text(subtitle, color = Brand.Muted, fontSize = 12.sp, maxLines = 2, lineHeight = 17.sp)
+            Text(title, color = Brand.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (subtitle != null) Text(subtitle, color = Brand.Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 17.sp)
         }
         if (trailing != null) {
             Spacer(Modifier.width(6.dp))
@@ -248,7 +258,7 @@ fun HealthTile(icon: ImageVector, label: String, state: String, ok: Boolean, mod
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(6.dp).clip(CircleShape).background(tone.fg))
             Spacer(Modifier.width(4.dp))
-            Text(state, color = tone.fg, fontSize = 11.sp, maxLines = 1)
+            Text(state, color = tone.fg, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -268,10 +278,11 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (on) Brand.GreenSoft else Color.Transparent)
                     .clickable { onSelect(i) }
-                    .padding(vertical = 10.dp),
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 2.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = if (on) Brand.GreenDark else Brand.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+                Text(label, color = if (on) Brand.GreenDark else Brand.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -329,7 +340,7 @@ fun ErrorState(message: String, onRetry: () -> Unit) {
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Brand.BadSoft).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(message, color = Brand.Bad, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f))
+        Text(Persian.digits(message), color = Brand.Bad, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f))
         TextButton(onClick = onRetry) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))

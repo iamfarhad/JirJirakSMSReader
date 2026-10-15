@@ -16,11 +16,16 @@ class SyncJob : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
         Thread {
-            Net.flush(this)
-            Net.ping(this)
+            // Each step on its own: one throwing must not skip jobFinished and leave the job hanging.
+            runCatching { Net.flush(this) }
+            runCatching { Net.ping(this) }
+            // What arrived while the app could not hear it, then the counts the seller asked to hear of.
+            runCatching { Recovery.scan(this) }
+            runCatching { Alerts.checkReview(this) }
             // The retry job asks to be run again (with its backoff) while anything is still queued;
             // `false` here made the backoff dead config and a failed retry the last one.
-            val again = params.jobId == RETRY && Store(this).queue().isNotEmpty() && Store(this).endpoint != null
+            val store = Store(this)
+            val again = params.jobId == RETRY && runCatching { store.queueSize() > 0 }.getOrDefault(false) && store.endpoint != null
             jobFinished(params, again)
         }.start()
         return true

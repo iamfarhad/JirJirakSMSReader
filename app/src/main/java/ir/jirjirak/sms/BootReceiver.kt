@@ -20,6 +20,9 @@ class BootReceiver : BroadcastReceiver() {
             SyncJob.scheduleRetry(context)
             // Starting a foreground service from BOOT_COMPLETED is one of Android's allowed cases.
             KeepAliveService.start(context)
+            // An SMS that arrived during the reboot never reached the receiver: look for it.
+            val app = context.applicationContext
+            Thread { runCatching { Recovery.scan(app, force = true) } }.start()
         }
         if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             // The APK that was just installed is of no further use.

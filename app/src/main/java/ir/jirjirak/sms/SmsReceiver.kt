@@ -27,9 +27,13 @@ class SmsReceiver : BroadcastReceiver() {
         val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
         // A long SMS arrives in parts; join them per sender, in order.
         val bySender = linkedMapOf<String, StringBuilder>()
+        // The SMS centre's stamp of each message: the same value the inbox keeps as `date_sent`, which
+        // is how a recovery pass later knows this SMS was already handled (Rules.fingerprint).
+        val sentAt = hashMapOf<String, Long>()
         for (p in parts) {
             val from = p?.displayOriginatingAddress ?: continue
             bySender.getOrPut(from) { StringBuilder() }.append(p.messageBody ?: "")
+            sentAt.putIfAbsent(from, p.timestampMillis)
         }
 
         val allowed = store.senders
@@ -47,18 +51,30 @@ class SmsReceiver : BroadcastReceiver() {
                 continue
             }
             if (Rules.isSecret(body)) {
+                // Not even its fingerprint is kept: a hash of a 6-digit code is a 6-digit code. Recovery
+                // skips passwords on its own (Rules.isSecret), so nothing needs remembering.
                 store.event("ignored", "info", "رمز یکبار مصرف — روی گوشی ماند", "پیامک رمز و کد تأیید هرگز فرستاده نمی‌شود، حتی از شمارهٔ مجاز.", from)
                 continue
             }
+            val fingerprint = Rules.fingerprint(from, body, sentAt[from] ?: 0L)
             val id = UUID.randomUUID().toString()
-            store.enqueue(
+            val fresh = runCatching { store.enqueue(
                 JSONObject()
                     .put("id", id)
                     .put("message", body)
                     .put("from", from)
                     .put("received_at", System.currentTimeMillis() / 1000)
+                    .put("sent_at", sentAt[from] ?: 0L)
                     .put("source", "jirjirak-sms/" + BuildConfig.VERSION_NAME),
-            )
+                fingerprint,
+            ) }.getOrElse {
+                // A full disk or a broken database: the SMS is still in the phone's inbox, and the log
+                // says why it did not go — recovery picks it up once the database works again.
+                store.event("sms", "failed", "پیامک بانک ذخیره نشد", "حافظهٔ گوشی پر است یا خطای پایگاه‌داده؛ پیامک در صندوق گوشی هست.", from, body)
+                continue
+            }
+            // A recovery pass got here first (the receiver can be woken late): already on its way.
+            if (!fresh) continue
             store.event("sms", "queued", "پیامک بانک", "در صف ارسال به ربات", from, body, id)
             queued = true
         }

@@ -205,7 +205,7 @@ private fun ReportAnalytics(store: Store) {
     }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         MetricCard(
-            "میانگین زمان تأیید خودکار", if (m.avgAutoSeconds > 0) duration(m.avgAutoSeconds) else "—", "از رسیدن پیامک تا تأیید",
+            "میانگین زمان تأیید خودکار", if (m.avgAutoSeconds > 0) duration(m.avgAutoSeconds) else "—", "از ثبت فاکتور تا تأیید",
             Icons.Filled.DateRange, Tone.info, Modifier.weight(1f),
         )
         MetricCard(
@@ -302,7 +302,7 @@ fun diagnostics(context: Context, store: Store, now: Long): String {
         "جیرجیرک پیامک " + BuildConfig.VERSION_NAME + " · Android " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL,
         "فروشگاه: " + (store.shop ?: "—") + " · سرور: " + (store.server ?: "—"),
         "اجازهٔ پیامک: " + yes(sms) + " · اعلان: " + yes(notif) + " · باتری آزاد: " + yes(battery) + " · اجرای خودکار: " + yes(store.autostartConfirmed),
-        "آخرین ارتباط: " + Persian.ago(store.lastPing, now) + " · آخرین پیامک: " + Persian.ago(store.lastSent, now) + " · در صف: " + store.queue().size + " · خطای آخر: " + (store.lastError ?: "—"),
+        "آخرین ارتباط: " + Persian.ago(store.lastPing, now) + " · آخرین پیامک: " + Persian.ago(store.lastSent, now) + " · در صف: " + store.queueSize() + " · خطای آخر: " + (store.lastError ?: "—"),
         "شماره‌های مجاز: " + (store.senders.takeIf { it.isNotEmpty() }?.joinToString("، ") ?: "هیچ"),
         "رویدادهای اخیر:",
     )

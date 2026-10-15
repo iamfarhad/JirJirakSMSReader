@@ -13,6 +13,8 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** An intent extra naming the tab to open — the update notification opens «بیشتر». */
         const val TAB = "tab"
+        /** With [TAB_RECEIPTS]: which filter of the receipts centre (1 waiting, 3 mismatches). */
+        const val FILTER = "filter"
         const val TAB_HOME = 0
         const val TAB_REPORT = 1
         const val TAB_MORE = 2
@@ -25,6 +27,8 @@ class MainActivity : ComponentActivity() {
     /** The tab asked for by the intent that opened (or re-opened) the app. */
     private val wantedTab = mutableIntStateOf(TAB_HOME)
 
+    private val wantedFilter = mutableIntStateOf(0)
+
     /**
      * Bumped with every intent that names a tab. A second notification naming the SAME tab must
      * still switch to it after the seller wandered off — and a state set to its current value does
@@ -34,23 +38,32 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The first open of the queue database, the 1.1 queue's move into it and the one-time sealing of
+        // the pairing address: done here off the main thread, not during the first frame.
+        val app = applicationContext
+        Thread { runCatching { Store(app).let { it.queueSize(); it.endpoint; it.manageKey } } }.start()
         if (Store(this).endpoint != null) {
             SyncJob.schedulePeriodic(this)
             Beat.schedule(this)
             KeepAliveService.start(this)
         }
-        wantedTab.intValue = intent?.getIntExtra(TAB, TAB_HOME) ?: TAB_HOME
+        // A rotation restores the tab the seller was on; only a fresh start obeys the intent's tab.
+        wantedTab.intValue = if (savedInstanceState == null) intent?.getIntExtra(TAB, TAB_HOME) ?: TAB_HOME else -1
+        wantedFilter.intValue = intent?.getIntExtra(FILTER, 0) ?: 0
         setContent {
             JirjirakTheme {
-                App(resumed.intValue, wantedTab.intValue, tabRequest.intValue)
+                App(resumed.intValue, wantedTab.intValue, wantedFilter.intValue, tabRequest.intValue)
             }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Kept as the activity's intent: a rotation re-reads it, and must find this one, not the first.
+        setIntent(intent)
         if (intent.hasExtra(TAB)) {
             wantedTab.intValue = intent.getIntExtra(TAB, TAB_HOME)
+            wantedFilter.intValue = intent.getIntExtra(FILTER, 0)
             tabRequest.intValue++
         }
     }
