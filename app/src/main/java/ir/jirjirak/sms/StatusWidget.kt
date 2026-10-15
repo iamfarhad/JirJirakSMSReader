@@ -34,6 +34,17 @@ class StatusWidget : AppWidgetProvider() {
             return title to sub
         }
 
+        /**
+         * Ask the launcher to place the widget (Android 8+, on launchers that support it — most do).
+         * False when it cannot: the screen then explains the long-press way.
+         */
+        fun requestPin(context: Context): Boolean {
+            if (android.os.Build.VERSION.SDK_INT < 26) return false
+            val manager = context.getSystemService(AppWidgetManager::class.java) ?: return false
+            if (!manager.isRequestPinAppWidgetSupported) return false
+            return runCatching { manager.requestPinAppWidget(ComponentName(context, StatusWidget::class.java), null, null) }.getOrDefault(false)
+        }
+
         /** Redraw every placed widget; a no-op when none is on the home screen. */
         fun refresh(context: Context) {
             val manager = AppWidgetManager.getInstance(context) ?: return

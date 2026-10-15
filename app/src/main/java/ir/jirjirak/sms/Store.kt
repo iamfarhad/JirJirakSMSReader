@@ -141,6 +141,11 @@ class Store(context: Context) {
     fun revokeManageKey() = commit(prefs.edit().remove("manage_key").putBoolean("manage_key_revoked", true))
 
     /** The seller said they switched on the vendor's «Autostart» — the phone has no way to tell us. */
+    /** «ظاهر»: "system" (follow the phone), "light" or "dark". */
+    var theme: String
+        get() = prefs.getString("theme", "system") ?: "system"
+        set(v) = commit(prefs.edit().putString("theme", v))
+
     var autostartConfirmed: Boolean
         get() = prefs.getBoolean("autostart_confirmed", false)
         set(v) = commit(prefs.edit().putBoolean("autostart_confirmed", v))

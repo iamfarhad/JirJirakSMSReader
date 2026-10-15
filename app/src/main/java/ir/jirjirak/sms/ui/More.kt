@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ButtonDefaults
@@ -52,6 +54,7 @@ import kotlinx.coroutines.withContext
 fun MoreTab(store: Store, now: Long) {
     watchStore()
     UpdateCard(store, now)
+    AppearanceCard(store)
     JirjirakCard()
     ConnectionCard(store)
     VersionLine()
@@ -164,6 +167,48 @@ private fun UpdateCard(store: Store, now: Long) {
                 }
             }) { Text(if (checking) "در حال بررسی…" else "بررسی به‌روزرسانی", fontWeight = FontWeight.SemiBold) }
         }
+    }
+}
+
+// ── look and the home-screen widget ─────────────────────────────────────
+
+/**
+ * «ظاهر»: light, dark or the phone's own — and the widget, placed from here. Both existed in 1.1
+ * but only through the phone's settings and its home-screen long-press, and a seller who looked for
+ * them in the app found nothing.
+ */
+@Composable
+private fun AppearanceCard(store: Store) {
+    watchStore()
+    val context = LocalContext.current
+    var widgetNote by remember { mutableStateOf<String?>(null) }
+    Section("ظاهر و ویجت", Icons.Filled.Info, Brand.Green) {
+        Text("رنگ برنامه", color = Brand.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf("system" to "مثل گوشی", "light" to "روشن", "dark" to "تاریک").forEach { (key, label) ->
+                FilterChip(
+                    selected = store.theme == key,
+                    onClick = { store.theme = key },
+                    label = { Text(label, fontSize = 13.sp) },
+                    modifier = Modifier.weight(1f),
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Brand.GreenSoft, selectedLabelColor = Brand.GreenDark),
+                )
+            }
+        }
+        HorizontalDivider(color = Brand.Line)
+        Text("ویجت صفحهٔ اصلی", color = Brand.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text("وضعیت ارسال و تعداد پیامک‌های امروز را بدون باز کردن برنامه، روی صفحهٔ اصلی گوشی ببینید.", color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp)
+        OutlinedButton(
+            onClick = {
+                widgetNote = if (ir.jirjirak.sms.StatusWidget.requestPin(context)) {
+                    "گوشی می‌پرسد ویجت کجا قرار بگیرد؛ «افزودن» را بزنید."
+                } else {
+                    "این گوشی افزودن مستقیم را پشتیبانی نمی‌کند: روی یک جای خالی صفحهٔ اصلی انگشت را نگه دارید ← «ابزارک‌ها» یا «Widgets» ← «جیرجیرک پیامک» را پیدا کنید و روی صفحه بکشید."
+                }
+            },
+            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+        ) { Text("افزودن ویجت به صفحهٔ اصلی") }
+        widgetNote?.let { Text(it, color = Brand.Muted, fontSize = 12.sp, lineHeight = 18.sp) }
     }
 }
 

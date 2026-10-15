@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ir.jirjirak.sms.R
+import ir.jirjirak.sms.Store
 
 /**
  * Jirjirak's own palette: a cricket's green on a light, calm surface — or on a deep green-black at
@@ -60,8 +61,32 @@ val Vazirmatn = FontFamily(
 
 @Composable
 fun JirjirakTheme(content: @Composable () -> Unit) {
-    Brand.dark = isSystemInDarkTheme()
+    // The seller's choice in «بیشتر ← ظاهر», or the phone's own setting by default.
+    watchStore()
+    val choice = Store(androidx.compose.ui.platform.LocalContext.current).theme
+    Brand.dark = when (choice) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
     val base = if (Brand.dark) darkColorScheme() else lightColorScheme()
+    // The bars follow the app's choice, not only the phone's: a dark app under a pale status bar
+    // looks broken.
+    val view = androidx.compose.ui.platform.LocalView.current
+    val dark = Brand.dark
+    androidx.compose.runtime.SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        val bar = if (dark) 0xFF0B1410.toInt() else 0xFFF2FAF5.toInt()
+        @Suppress("DEPRECATION")
+        window.statusBarColor = bar
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = bar
+        window.decorView.setBackgroundColor(bar)
+        androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+    }
     MaterialTheme(
         colorScheme = base.copy(
             primary = Brand.Green,
