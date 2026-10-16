@@ -2,5 +2,5 @@
 <!-- Before Android 8 there are no adaptive icons: the same mark on the same background, layered. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@drawable/ic_launcher_background" />
-    <item android:drawable="@drawable/ic_cricket" />
+    <item android:drawable="@drawable/ic_launcher_foreground" />
 </layer-list>

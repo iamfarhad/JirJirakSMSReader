@@ -69,6 +69,60 @@ object Receipts {
         )
     }
 
+    /**
+     * What came of a decision that moves money or service — approve, reject, set a deposit aside.
+     *
+     * [Unknown] is the honest answer to a request that left the phone and got no clear reply (a
+     * timeout, a dropped connection, a gateway error): the bot may well have done it. The screen then
+     * reads the receipt again from the bot instead of retrying blind or showing a hopeful success.
+     */
+    sealed interface Decision {
+        data object Done : Decision
+        data object AlreadyDecided : Decision
+        data object NeedKey : Decision
+        data class Unknown(val message: String) : Decision
+        data class Failed(val message: String) : Decision
+    }
+
+    /** What a decision's reply means. Code 0 is «nothing came back». Pure: unit-tested. */
+    fun decisionOutcome(code: Int, text: String): Decision = when {
+        code in 200..299 -> Decision.Done
+        code == 409 -> Decision.AlreadyDecided
+        code == 401 -> Decision.NeedKey
+        // No reply, or a gateway / server fault after the request was sent: it may have gone through.
+        code == 0 || code >= 500 -> Decision.Unknown(
+            if (code == 0) text.ifBlank { "پاسخ ربات نرسید" } else "ربات خطا داد (" + ir.jirjirak.sms.ui.Persian.number(code) + ")",
+        )
+        else -> Decision.Failed((outcome(code, text) { } as? Result.Failed)?.message ?: "انجام نشد (" + ir.jirjirak.sms.ui.Persian.number(code) + ")")
+    }
+
+    /**
+     * A pasted manage code, as the bot judged it — asked BEFORE the code is kept, so «فعال شد» is
+     * said only after the bot accepted it. 401 is the code, 403 the shop's subscription, 404 the
+     * pairing or an old bot: three different fixes, never one «bad key».
+     */
+    enum class KeyCheck { OK, WRONG, FORBIDDEN, NOT_FOUND, OFFLINE, FAILED }
+
+    /** Pure: unit-tested. */
+    fun keyCheck(code: Int): KeyCheck = when {
+        code in 200..299 -> KeyCheck.OK
+        code == 401 -> KeyCheck.WRONG
+        code == 403 -> KeyCheck.FORBIDDEN
+        code == 404 -> KeyCheck.NOT_FOUND
+        code == 0 -> KeyCheck.OFFLINE
+        else -> KeyCheck.FAILED
+    }
+
+    /**
+     * Ask the bot whether [key] opens this shop's receipts — the plain list, the one page every bot
+     * with a manage key has had since 1.1, so an older bot is not mistaken for a lost pairing.
+     * Network: call off the main thread.
+     */
+    fun verify(context: Context, key: String): KeyCheck {
+        val (code, _) = raw(context, "GET", "", null, key) ?: return KeyCheck.NOT_FOUND
+        return keyCheck(code)
+    }
+
     /** Halve until the photo fits a phone screen — a receipt photo can be 4000px tall. Pure. */
     fun sampleSize(width: Int, height: Int, maxWidth: Int = 1080, maxHeight: Int = 1920): Int {
         var sample = 1
@@ -274,6 +328,8 @@ object Receipts {
         data class AmountDiffers(val deposit: Long, val expected: Long) : Assign
         data class Refused(val message: String) : Assign
         data object NeedKey : Assign
+        /** No clear reply: the bot may have tied it. Read the deposit again before anything else. */
+        data class Unknown(val message: String) : Assign
     }
 
     /** What an assign reply means. Pure: unit-tested. */
@@ -282,6 +338,7 @@ object Receipts {
         return when {
             code in 200..299 -> Assign.Done
             code == 401 -> Assign.NeedKey
+            code == 0 || code >= 500 -> Assign.Unknown(if (code == 0) text.ifBlank { "پاسخ ربات نرسید" } else "ربات خطا داد (" + ir.jirjirak.sms.ui.Persian.number(code) + ")")
             code == 422 && j?.optString("error") == "amount_differs" -> Assign.AmountDiffers(j.optLong("deposit_amount"), j.optLong("expected"))
             else -> Assign.Refused(
                 j?.optString("message")?.takeIf { m -> m.any { it in '\u0600'..'\u06FF' } }
@@ -330,10 +387,10 @@ object Receipts {
     fun assign(context: Context, payment: Long, deposit: Long, acceptDifference: Boolean): Assign {
         val (code, text) = raw(context, "POST", "/$payment/assign", JSONObject().put("deposit", deposit).put("accept_difference", acceptDifference))
             ?: return Assign.NeedKey
-        return if (code == 0) Assign.Refused(text) else assignOutcome(code, text)
+        return assignOutcome(code, text)
     }
 
-    fun ignore(context: Context, deposit: Long): Result<Unit> = call(context, "POST", "/deposits/$deposit/ignore") { }
+    fun ignore(context: Context, deposit: Long): Decision = decide(context, "/deposits/$deposit/ignore", null)
 
     fun formats(context: Context): Result<List<Format>> = call(context, "GET", "/formats") { parseFormats(it) }
 
@@ -344,10 +401,15 @@ object Receipts {
 
     fun forgetFormat(context: Context, id: Long): Result<Unit> = call(context, "DELETE", "/formats/$id") { }
 
-    fun approve(context: Context, id: Long): Result<Unit> = call(context, "POST", "/$id/approve") { }
+    fun approve(context: Context, id: Long): Decision = decide(context, "/$id/approve", null)
 
-    fun reject(context: Context, id: Long, reason: String): Result<Unit> =
-        call(context, "POST", "/$id/reject", JSONObject().put("reason", reason)) { }
+    fun reject(context: Context, id: Long, reason: String): Decision =
+        decide(context, "/$id/reject", JSONObject().put("reason", reason))
+
+    private fun decide(context: Context, path: String, body: JSONObject?): Decision {
+        val (code, text) = raw(context, "POST", path, body) ?: return Decision.NeedKey
+        return decisionOutcome(code, text)
+    }
 
     fun image(context: Context, id: Long): Bitmap? {
         val (base, key) = target(context) ?: return null
@@ -374,10 +436,10 @@ object Receipts {
         }.getOrNull()
     }
 
-    private fun target(context: Context): Pair<String, String>? {
+    private fun target(context: Context, candidate: String? = null): Pair<String, String>? {
         val store = Store(context)
         val endpoint = store.endpoint ?: return null
-        val key = store.manageKey ?: return null
+        val key = candidate ?: store.manageKey ?: return null
         return "$endpoint/receipts" to key
     }
 
@@ -388,8 +450,8 @@ object Receipts {
     }
 
     /** The status and body; code 0 with the reason when nothing came back; null without a key. */
-    private fun raw(context: Context, method: String, path: String, body: JSONObject?): Pair<Int, String>? {
-        val (base, key) = target(context) ?: return null
+    private fun raw(context: Context, method: String, path: String, body: JSONObject?, candidate: String? = null): Pair<Int, String>? {
+        val (base, key) = target(context, candidate) ?: return null
         return try {
             val con = URL(base + path).openConnection() as HttpURLConnection
             try {

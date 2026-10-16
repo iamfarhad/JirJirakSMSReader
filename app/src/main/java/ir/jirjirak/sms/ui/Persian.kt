@@ -22,6 +22,14 @@ object Persian {
     /** A host name, a model number, a version: left-to-right and left alone. */
     fun latin(s: String): String = "⁦" + s + "⁩"
 
+    private val LATIN_RUN = Regex("""[A-Za-z][A-Za-z0-9._@/:+-]*|[A-Za-z0-9._/+-]*\d[A-Za-z0-9._/+-]*[A-Za-z][A-Za-z0-9._@/:+-]*""")
+
+    /**
+     * Persian text with Latin tokens in it — a version, a host, a sender id — each token isolated so
+     * «1.2.1-debug» does not come out as «debug-1.2.1». Text already isolated is left alone.
+     */
+    fun bidi(s: String): String = if (s.contains('\u2066')) s else LATIN_RUN.replace(s) { latin(it.value) }
+
     fun ago(millis: Long, now: Long = System.currentTimeMillis()): String {
         if (millis <= 0) return "هنوز نه"
         val s = (now - millis) / 1000

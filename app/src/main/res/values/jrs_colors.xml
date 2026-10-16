@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <color name="jrs_canvas">#F5F8F7</color>
+  <color name="jrs_surface">#FFFFFF</color>
+  <color name="jrs_ink">#16332D</color>
+  <color name="jrs_muted">#586F69</color>
+  <color name="jrs_line">#DCE7E3</color>
+  <color name="jrs_control">#7C938A</color>
+  <color name="jrs_primary">#067552</color>
+  <color name="jrs_on_primary">#FFFFFF</color>
+  <color name="jrs_primary_soft">#E5F5ED</color>
+  <color name="jrs_good">#067552</color>
+  <color name="jrs_good_bg">#E5F5ED</color>
+  <color name="jrs_warn">#8A4B08</color>
+  <color name="jrs_warn_bg">#FFF5E5</color>
+  <color name="jrs_bad">#B42318</color>
+  <color name="jrs_bad_bg">#FFF0ED</color>
+  <color name="jrs_info">#1E56A0</color>
+  <color name="jrs_info_bg">#EEF5FF</color>
+  <color name="jrs_disabled">#E7ECE9</color>
+  <color name="jrs_disabled_ink">#60736B</color>
+</resources>

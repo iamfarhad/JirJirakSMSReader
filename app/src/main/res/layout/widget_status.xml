@@ -14,7 +14,8 @@
         android:layout_height="40dp"
         android:background="@drawable/widget_icon_bg"
         android:contentDescription="@null"
-        android:src="@drawable/ic_cricket" />
+        android:padding="4dp"
+        android:src="@drawable/jrs_mascot" />
 
     <LinearLayout
         android:layout_width="0dp"

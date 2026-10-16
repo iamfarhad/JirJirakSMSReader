@@ -20,7 +20,8 @@ object HealthCheck {
 
     enum class State { OK, WARN, BAD, INFO }
 
-    data class Step(val title: String, val state: State, val detail: String)
+    /** One line of the result. [key] marks the steps a summary depends on: «read», «dry_run_missing». */
+    data class Step(val title: String, val state: State, val detail: String, val key: String = "")
 
     /** What the phone knows before asking the bot. */
     data class Local(
@@ -75,7 +76,7 @@ object HealthCheck {
         out += Step("اتصال به ربات", State.OK, "آدرس و کد اتصال معتبر است.")
         if (remote.body == null) {
             // Connected, but the bot has no dry run yet: the SMS test is skipped, not faked.
-            out += Step("آزمون خواندن پیامک", State.INFO, "ربات فروشگاه هنوز به نسخهٔ تازه به‌روز نشده؛ این بخش از آزمون بعد از به‌روزرسانی ربات فعال می‌شود.")
+            out += Step("آزمون خواندن پیامک", State.INFO, "اجرا نشد: این نسخهٔ ربات آزمون بدون ثبت را اعلام نکرده، و نمونه‌ای به مسیر واقعی فرستاده نشد. بعد از به‌روزرسانی ربات فعال می‌شود.", key = "dry_run_missing")
             return out
         }
         val b = remote.body
@@ -87,9 +88,10 @@ object HealthCheck {
                 "خواندن پیامک بانک", State.OK,
                 (if (sampleIsReal) "آخرین پیامک بانک شما" else "پیامک نمونه") + " خوانده شد: " +
                     Money.toman(b.optLong("amount")) + (if (b.optBoolean("learned")) " (با قالب آموزش‌داده‌شده)" else ""),
+                key = "read",
             )
-            sampleIsReal -> Step("خواندن پیامک بانک", State.BAD, "ربات آخرین پیامک بانک شما را نخواند: " + b.optString("note").ifEmpty { "قالب ناشناخته" } + ". از «رسیدها ← مغایرت» قالبش را آموزش دهید.")
-            else -> Step("خواندن پیامک بانک", State.WARN, "هنوز پیامک واقعی بانک نرسیده که آزمایش شود.")
+            sampleIsReal -> Step("خواندن پیامک بانک", State.BAD, "ربات آخرین پیامک بانک شما را نخواند: " + b.optString("note").ifEmpty { "قالب ناشناخته" } + ". از «رسیدها ← مغایرت» قالبش را آموزش دهید.", key = "read")
+            else -> Step("خواندن پیامک بانک", State.WARN, "هنوز پیامک واقعی بانک نرسیده که آزمایش شود.", key = "read")
         }
         out += if (b.optBoolean("auto_on")) Step("تأیید خودکار سفارش", State.OK, "روشن است؛ واریز با امتیاز کافی خودکار تأیید می‌شود.")
         else Step("تأیید خودکار سفارش", State.INFO, "خاموش است؛ ربات فقط نظر می‌دهد. از ربات «تأیید واقعی سفارش» را روشن کنید.")
@@ -102,6 +104,18 @@ object HealthCheck {
      */
     fun shouldDryRun(shopInfo: JSONObject): Boolean =
         shopInfo.optJSONArray("features")?.let { a -> (0 until a.length()).any { a.optString(it) == "dry_run" } } ?: false
+
+    /**
+     * The headline of a run. [PARTIAL]: everything that ran is fine, but the SMS-reading test did not
+     * run (an older bot) — which must never be shown as «the whole road is healthy». Pure.
+     */
+    enum class Outcome { GOOD, PARTIAL, WARN, BAD }
+
+    fun outcome(steps: List<Step>): Outcome = when (verdict(steps)) {
+        State.BAD -> Outcome.BAD
+        State.WARN -> Outcome.WARN
+        else -> if (steps.any { it.key == "read" }) Outcome.GOOD else Outcome.PARTIAL
+    }
 
     /** Overall: bad if any step is, else warn if any is, else ok. Pure. */
     fun verdict(steps: List<Step>): State = when {

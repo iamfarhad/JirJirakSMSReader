@@ -54,7 +54,7 @@
 <p align="center">
   <img src="docs/screenshots/pair.png" width="200" alt="اتصال به فروشگاه" />
   <img src="docs/screenshots/home.png" width="200" alt="خانه" />
-  <img src="docs/screenshots/senders.png" width="200" alt="شماره‌های مجاز بانک" />
+  <img src="docs/screenshots/receipts.png" width="200" alt="رسیدها" />
   <img src="docs/screenshots/report.png" width="200" alt="گزارش" />
 </p>
 

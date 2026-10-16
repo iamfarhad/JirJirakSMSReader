@@ -29,6 +29,7 @@ android {
         targetSdk = 36
         versionCode = semverParts[0] * 1_000_000 + semverParts[1] * 1_000 + semverParts[2]
         versionName = semver
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -91,4 +92,9 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.core)
     testImplementation(libs.junit)
     testImplementation(libs.json)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

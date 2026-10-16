@@ -194,7 +194,8 @@ class RecoveryAndHealthTest {
             Receipts.Assign.Refused("این واریز دیگر آزاد نیست؛ صفحه را تازه کنید."),
             Receipts.assignOutcome(409, """{"ok":false,"error":"deposit_taken","message":"این واریز دیگر آزاد نیست؛ صفحه را تازه کنید."}"""),
         )
-        assertTrue((Receipts.assignOutcome(500, "Server Error") as Receipts.Assign.Refused).message.contains("۵۰۰"))
+        // A server fault after the request went out may still have tied it: unknown, read it again.
+        assertTrue((Receipts.assignOutcome(500, "Server Error") as Receipts.Assign.Unknown).message.contains("۵۰۰"))
     }
 
     @Test

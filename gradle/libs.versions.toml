@@ -6,6 +6,8 @@ activityCompose = "1.10.1"
 composeBom = "2024.09.00"
 junit = "4.13.2"
 json = "20240303"
+testRunner = "1.6.2"
+testExtJunit = "1.2.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -18,6 +20,11 @@ androidx-compose-material-icons-core = { group = "androidx.compose.material", na
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # A real org.json for JVM unit tests: the Android SDK stub throws on every call.
 json = { group = "org.json", name = "json", version.ref = "json" }
+# Instrumented UI tests (the redesign's flows, font scale, RTL and TalkBack semantics) — tests only.
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "testRunner" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "testExtJunit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

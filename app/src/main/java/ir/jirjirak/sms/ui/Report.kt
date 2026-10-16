@@ -5,51 +5,38 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import ir.jirjirak.sms.BuildConfig
 import ir.jirjirak.sms.Money
@@ -59,18 +46,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** «گزارش»: every SMS and what became of it, every hiccup, by day — and a copy for support. */
+/** «گزارش»: the shop's figures from the bot, then every SMS and what became of it, by day. */
 @Composable
 fun ReportTab(store: Store, now: Long) {
     watchStore()
     val context = LocalContext.current
+    val nav = LocalNav.current
     val clipboard = LocalClipboardManager.current
     val all = store.events()
-    var filter by remember { mutableIntStateOf(0) }
+    var filter by rememberSaveable { mutableIntStateOf(0) }
     var shown by remember { mutableIntStateOf(40) }
     var expanded by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
+
+    when {
+        all.isEmpty() -> Hero("گزارش رویدادها", "هر پیامک بانکی با نتیجهٔ ارسالش اینجا ثبت خواهد شد.", Tone.info, icon = Ico.Chart)
+        filter == 3 -> Hero("پیگیری مشکلات", "رویدادهای نیازمند توجه، برای عیب‌یابی", Tone.warn, icon = Ico.Alert)
+        else -> Hero("گزارش واریزها و پیامک‌ها", "وضعیت پردازش و ارسال در یک نگاه", Tone.info, icon = Ico.Chart)
+    }
 
     ReportAnalytics(store)
 
@@ -81,65 +75,54 @@ fun ReportTab(store: Store, now: Long) {
         else -> all
     }
 
-    Section("گزارش فنی گوشی", Icons.AutoMirrored.Filled.List, trailing = {
-        Pill(Persian.number(events.size), Brand.GreenSoft, Brand.GreenDark)
-    }) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("همه", "پیامک‌ها", "فرستاده‌نشده", "مشکل‌ها").forEachIndexed { i, label ->
-                FilterChip(
-                    selected = filter == i,
-                    onClick = { filter = i; shown = 40 },
-                    label = { Text(label, fontSize = 13.sp) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Brand.GreenSoft, selectedLabelColor = Brand.GreenDark),
-                )
-            }
-        }
+    AppCard(title = "گزارش فنی گوشی", trailing = { StatusBadge(Persian.number(events.size) + " رویداد", Tone.muted) }) {
+        Segmented(listOf("همه", "پیامک‌ها", "فرستاده‌نشده", "مشکل‌ها"), filter) { filter = it; shown = 40 }
         if (events.isEmpty()) {
-            Text(
+            EmptyState(
                 when (filter) {
-                    1 -> "هنوز پیامکی فرستاده نشده است."
-                    2 -> "هیچ پیامک بانکی‌ای نادیده گرفته نشده است."
-                    3 -> "مشکلی ثبت نشده است."
-                    else -> "هنوز چیزی ثبت نشده است. هر پیامک بانک که برسد — فرستاده شود یا نه — اینجا با دلیلش می‌آید."
+                    1 -> "هنوز پیامکی فرستاده نشده است"
+                    2 -> "هیچ پیامک بانکی‌ای نادیده گرفته نشده است"
+                    3 -> "مشکلی ثبت نشده است"
+                    else -> "هنوز رویدادی ندارید"
                 },
-                color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp,
+                if (filter == 0) "پس از اولین پیامک بانک، نتیجهٔ ارسال در این بخش نمایش داده می‌شود." else null,
+                if (filter == 0) Art.Report else null,
             )
+            if (filter == 0) SecondaryButton("بررسی سلامت سیستم", { nav.home("health") })
         }
         var lastDay: String? = null
         events.take(shown).forEach { e ->
             val day = Persian.day(e.optLong("at"), now)
             if (day != lastDay) {
                 lastDay = day
-                Text(day, color = Brand.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-                HorizontalDivider(color = Brand.Line)
+                Text(day, style = Type.badge, color = Brand.Muted, modifier = Modifier.padding(top = 6.dp))
+                Divider()
             }
             val id = e.optString("id")
             EventRow(e, expanded == id) { expanded = if (expanded == id) null else id }
         }
-        if (events.size > shown) {
-            TextButton(onClick = { shown += 40 }, modifier = Modifier.fillMaxWidth()) { Text("نمایش بیشتر") }
+        if (events.size > shown) SecondaryButton("نمایش بیشتر", { shown += 40 })
+        // A password SMS leaves only its sender and the reason in the log: no text, no fingerprint.
+        if (events.any { it.optString("kind") == "ignored" && it.optString("title").contains("رمز") }) {
+            Notice("پیامک‌های رمز روی گوشی ماندند", "فقط نام فرستنده و دلیل عدم ارسال ثبت می‌شود؛ متن آن‌ها نه ذخیره می‌شود و نه ارسال. تشخیص رمز بر اساس الگوست و تضمین صددرصد نیست.", Tone.good, Ico.Shield)
         }
     }
 
-    Section("برای پشتیبانی", Icons.AutoMirrored.Filled.List, Brand.Muted) {
+    AppCard(title = "برای پشتیبانی") {
         Text(
-            "اگر چیزی درست کار نمی‌کند، این گزارش را کپی کنید و برای پشتیبانی جیرجیرک بفرستید: نسخه، وضعیت اجازه‌ها، آخرین ارتباط و رویدادهای اخیر — بدون متن پیامک‌ها.",
-            color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp,
+            "اگر چیزی درست کار نمی‌کند، این گزارش را کپی کنید و برای پشتیبانی جیرجیرک بفرستید: نسخه، وضعیت اجازه‌ها، آخرین ارتباط و رویدادهای اخیر — بدون متن پیامک‌ها و بدون هیچ کدی.",
+            style = Type.supporting, color = Brand.Muted,
         )
-        OutlinedButton(
-            onClick = { clipboard.setText(AnnotatedString(diagnostics(context, store, now))); copied = true },
-            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
-        ) { Text(if (copied) "کپی شد ✓" else "کپی گزارش برای پشتیبانی") }
-        TextButton(onClick = { clearing = true }, modifier = Modifier.fillMaxWidth()) { Text("پاک کردن گزارش", color = Brand.Bad) }
+        SecondaryButton(if (copied) "کپی شد" else "کپی گزارش امن برای پشتیبانی", {
+            clipboard.setText(AnnotatedString(diagnostics(context, store, now))); copied = true
+        }, icon = Ico.Copy)
+        if (all.isNotEmpty()) LinkButton("پاک کردن گزارش", { clearing = true }, color = Brand.Bad, modifier = Modifier.fillMaxWidth())
     }
 
     if (clearing) {
-        AlertDialog(
-            onDismissRequest = { clearing = false },
-            title = { Text("پاک کردن گزارش") },
-            text = { Text("همهٔ رویدادهای ثبت‌شده پاک می‌شود. پیامک‌هایی که هنوز فرستاده نشده‌اند در صف می‌مانند.") },
-            confirmButton = { TextButton(onClick = { store.clearEvents(); clearing = false }) { Text("پاک کن", color = Brand.Bad) } },
-            dismissButton = { TextButton(onClick = { clearing = false }) { Text("انصراف") } },
+        ConfirmDialog(
+            "پاک کردن گزارش؟", "همهٔ رویدادهای ثبت‌شده پاک می‌شود، اما پیامک‌هایی که هنوز فرستاده نشده‌اند در صف باقی می‌مانند.",
+            "پاک کردن گزارش", { store.clearEvents(); clearing = false }, { clearing = false }, danger = true,
         )
     }
 }
@@ -153,18 +136,16 @@ private val RANGES = listOf("today" to "امروز", "7d" to "۷ روز", "30d" 
 @Composable
 private fun ReportAnalytics(store: Store) {
     val context = LocalContext.current
+    val nav = LocalNav.current
     var range by rememberSaveable { mutableIntStateOf(1) }
     var summary by remember(range) { mutableStateOf<Receipts.Summary?>(null) }
     var error by remember(range) { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
 
     if (store.manageKey == null) {
-        AppCard {
-            SectionHeader("گزارش فروش و تأیید")
-            Text(
-                "برای دیدن آمار رسیدها، واریزها و درصد تأیید خودکار، کد مدیریت رسیدها را در تب «رسیدها» وارد کنید.",
-                color = Brand.Muted, fontSize = 13.sp, lineHeight = 20.sp,
-            )
+        AppCard(title = "گزارش فروش و تأیید") {
+            Text("برای دیدن آمار رسیدها، واریزها و درصد تأیید خودکار، کد مدیریت رسیدها لازم است.", style = Type.body, color = Brand.Muted)
+            SecondaryButton("افزودن کد مدیریت", { nav.receipts() })
         }
         return
     }
@@ -181,43 +162,33 @@ private fun ReportAnalytics(store: Store) {
     Segmented(RANGES.map { it.second }, range) { range = it }
     error?.let { ErrorState(it) { attempt++ }; return }
     val s = summary
+    val stack = LocalDensity.current.fontScale > 1.3f
     if (s == null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            repeat(2) { Skeleton(Modifier.weight(1f), height = 110) }
-        }
-        Skeleton(Modifier.fillMaxWidth(), height = 200)
+        Waiting("دریافت آمار از ربات…")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { repeat(2) { Skeleton(Modifier.weight(1f), height = 90) } }
         return
     }
     val m = s.metrics
-    val p = s.previous
-    val period = when (range) { 0 -> "دیروز"; 1 -> "هفتهٔ قبل"; else -> "ماه قبل" }
     val decided = m.autoApproved + m.manualApproved
 
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetricCard(
-            "نرخ تأیید خودکار", Persian.number(m.autoRate) + "٪", Persian.number(m.autoApproved) + " از " + Persian.number(decided) + " رسید",
-            Icons.Filled.Check, Tone.good, Modifier.weight(1f), delta(m.autoRate, p.autoRate, period), m.autoRate >= p.autoRate,
-        )
-        MetricCard(
-            "جمع واریزها", compactToman(m.depositsTotal), Persian.number(m.depositsCount) + " واریز",
-            Icons.Filled.Star, Tone.info, Modifier.weight(1f), delta(m.depositsTotal, p.depositsTotal, period), m.depositsTotal >= p.depositsTotal,
-        )
+    @Composable
+    fun pair(a: @Composable (Modifier) -> Unit, b: @Composable (Modifier) -> Unit) {
+        if (stack) { a(Modifier); b(Modifier) }
+        else Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            a(Modifier.weight(1f).fillMaxHeight()); b(Modifier.weight(1f).fillMaxHeight())
+        }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetricCard(
-            "میانگین زمان تأیید خودکار", if (m.avgAutoSeconds > 0) duration(m.avgAutoSeconds) else "—", "از ثبت فاکتور تا تأیید",
-            Icons.Filled.DateRange, Tone.info, Modifier.weight(1f),
-        )
-        MetricCard(
-            "رد شده / مغایرت", Persian.number(m.rejected) + " / " + Persian.number(m.unmatched), "رسید رد شده / واریز بی‌فاکتور",
-            Icons.Filled.Info, if (m.rejected + m.unmatched > 0) Tone.warn else Tone.muted, Modifier.weight(1f),
-        )
-    }
+    pair({ MetricTile("تأیید خودکار", Persian.number(m.autoApproved), "رسید", it) }, { MetricTile("تأیید دستی", Persian.number(m.manualApproved), "رسید", it) })
+    pair({ MetricTile("رد شده", Persian.number(m.rejected), "رسید", it) }, { MetricTile("در انتظار", Persian.number(m.needsReview), "رسید", it) })
+    pair(
+        { MetricTile("نرخ تأیید خودکار", Persian.number(m.autoRate) + "٪", Persian.number(m.autoApproved) + " از " + Persian.number(decided), it) },
+        { MetricTile("میانگین زمان تأیید", if (m.avgAutoSeconds > 0) duration(m.avgAutoSeconds) else "—", "خودکار", it) },
+    )
+    MetricTile("جمع واریزها", compactToman(m.depositsTotal).removeSuffix(" تومان"), "تومان", note = Persian.number(m.depositsCount) + " واریز · " + Persian.number(m.unmatched) + " بی‌فاکتور")
 
     // Day by day — only meaningful over more than one day.
     if (s.series.size > 1) {
-        AppCard {
-            SectionHeader("روند تأییدها")
+        AppCard(title = "روند تأیید پرداخت") {
             LineChart(s.series.map { it.auto.toFloat() }, Brand.Green, second = s.series.map { it.manual.toFloat() }, secondColor = Brand.Blue)
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Legend("خودکار", Brand.Green)
@@ -225,22 +196,21 @@ private fun ReportAnalytics(store: Store) {
                 Spacer(Modifier.weight(1f))
                 Text(
                     Persian.digits(s.series.first().date.takeLast(5).replace('-', '/')) + " تا " + Persian.digits(s.series.last().date.takeLast(5).replace('-', '/')),
-                    color = Brand.Muted, fontSize = 11.sp,
+                    style = Type.badge, color = Brand.Muted,
                 )
             }
         }
     }
 
-    AppCard {
-        SectionHeader("سهم هر روش")
+    AppCard(title = "سهم هر روش") {
         if (decided + m.rejected == 0) {
-            Text("در این بازه رسیدی تأیید یا رد نشده است.", color = Brand.Muted, fontSize = 13.sp)
+            Text("در این بازه رسیدی تأیید یا رد نشده است.", style = Type.body, color = Brand.Muted)
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Donut(listOf(m.autoApproved.toFloat() to Brand.Green, m.manualApproved.toFloat() to Brand.Blue, m.rejected.toFloat() to Brand.Bad)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(Persian.number(decided + m.rejected), color = Brand.Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text("رسید", color = Brand.Muted, fontSize = 11.sp)
+                        Text(Persian.number(decided + m.rejected), style = Type.page, color = Brand.Ink)
+                        Text("رسید", style = Type.badge, color = Brand.Muted)
                     }
                 }
                 Spacer(Modifier.width(16.dp))
@@ -254,11 +224,10 @@ private fun ReportAnalytics(store: Store) {
     }
 
     if (s.banks.isNotEmpty()) {
-        AppCard {
-            SectionHeader("واریز به تفکیک بانک")
+        AppCard(title = "واریز به تفکیک بانک") {
             val top = s.banks.maxOf { it.total }.takeIf { it > 0 } ?: 1L
             s.banks.forEach { b ->
-                ProgressRow(Persian.sender(b.sender), Persian.number(b.count) + " واریز · " + compactToman(b.total), b.total.toFloat() / top, Brand.Emerald)
+                ProgressRow(Persian.sender(b.sender), Persian.number(b.count) + " واریز · " + compactToman(b.total), b.total.toFloat() / top, Brand.Green)
             }
         }
     }
@@ -269,7 +238,7 @@ private fun Legend(label: String, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(10.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(6.dp))
-        Text(label, color = Brand.Ink, fontSize = 12.sp)
+        Text(label, style = Type.supporting, color = Brand.Ink)
     }
 }
 

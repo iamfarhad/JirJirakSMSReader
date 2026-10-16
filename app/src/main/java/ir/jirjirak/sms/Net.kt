@@ -76,6 +76,8 @@ object Net {
         is SocketTimeoutException -> "ربات دیر جواب داد (اینترنت کند یا سرور شلوغ)"
         is SSLException -> "گواهی امن (SSL) سرور ربات مشکل دارد"
         is ConnectException -> "به سرور ربات وصل نشد"
+        // The line dropped mid-request (an EOF, a reset): the bot may or may not have got it.
+        is java.io.IOException -> "ارتباط با ربات وسط کار قطع شد"
         else -> e.javaClass.simpleName + (e.message?.let { ": $it" } ?: "")
     }
 

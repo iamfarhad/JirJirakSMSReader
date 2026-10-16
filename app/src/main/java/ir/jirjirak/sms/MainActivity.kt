@@ -38,6 +38,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The recent-apps thumbnail would show a receipt, a customer's name or an amount to whoever
+        // picks the phone up. Android 13+ can leave it out without blocking the seller's own
+        // screenshots for support (FLAG_SECURE would block those too).
+        if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         // The first open of the queue database, the 1.1 queue's move into it and the one-time sealing of
         // the pairing address: done here off the main thread, not during the first frame.
         val app = applicationContext
@@ -66,6 +70,12 @@ class MainActivity : ComponentActivity() {
             wantedFilter.intValue = intent.getIntExtra(FILTER, 0)
             tabRequest.intValue++
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Leaving the screen hides what was shown on request: a revealed code, a receipt's photo.
+        ir.jirjirak.sms.ui.Privacy.epoch.intValue++
     }
 
     override fun onResume() {
