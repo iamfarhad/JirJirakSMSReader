@@ -16,8 +16,9 @@ import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
 /**
- * The two calls the app makes: deliver an SMS, and say «I am here». HttpURLConnection, no
- * library — the app has one job and should not need an update because a dependency did.
+ * The calls the app makes: deliver an SMS to the bot, say «I am here», and post an SMS to the
+ * seller's own webhooks. HttpURLConnection, no library — the app has one job and should not need
+ * an update because a dependency did.
  */
 object Net {
 
@@ -49,17 +50,24 @@ object Net {
     }
 
     /** POST one JSON document. */
-    fun post(url: String, body: JSONObject): Reply = try {
+    fun post(url: String, body: JSONObject): Reply =
+        send(url, "application/json; charset=utf-8", body.toString(), "ربات")
+
+    /** POST a form (`a=1&b=2`, already encoded) — what a webhook expects. */
+    fun postForm(url: String, form: String): Reply =
+        send(url, "application/x-www-form-urlencoded; charset=utf-8", form, "وب‌هوک")
+
+    private fun send(url: String, type: String, body: String, who: String): Reply = try {
         val con = URL(url).openConnection() as HttpURLConnection
         try {
             con.connectTimeout = 15_000
             con.readTimeout = 20_000
             con.requestMethod = "POST"
             con.doOutput = true
-            con.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            con.setRequestProperty("Content-Type", type)
             con.setRequestProperty("Accept", "application/json")
             con.setRequestProperty("User-Agent", "jirjirak-sms/" + BuildConfig.VERSION_NAME)
-            con.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            con.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val code = con.responseCode
             val text = (if (code < 400) con.inputStream else con.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
             Reply(code, text)
@@ -67,18 +75,31 @@ object Net {
             con.disconnect()
         }
     } catch (e: Exception) {
-        Reply(0, "", describe(e))
+        Reply(0, "", describe(e, who))
     }
 
-    /** A network exception as the seller would say it. */
-    fun describe(e: Throwable): String = when (e) {
-        is UnknownHostException -> "اینترنت ندارد، یا آدرس ربات پیدا نشد"
-        is SocketTimeoutException -> "ربات دیر جواب داد (اینترنت کند یا سرور شلوغ)"
-        is SSLException -> "گواهی امن (SSL) سرور ربات مشکل دارد"
-        is ConnectException -> "به سرور ربات وصل نشد"
-        // The line dropped mid-request (an EOF, a reset): the bot may or may not have got it.
-        is java.io.IOException -> "ارتباط با ربات وسط کار قطع شد"
+    /** A network exception as the seller would say it, about [who] — the bot or a webhook. */
+    fun describe(e: Throwable, who: String = "ربات"): String = when (e) {
+        is UnknownHostException -> "اینترنت ندارد، یا آدرس $who پیدا نشد"
+        is SocketTimeoutException -> "$who دیر جواب داد (اینترنت کند یا سرور شلوغ)"
+        is SSLException -> "گواهی امن (SSL) سرور $who مشکل دارد"
+        is ConnectException -> "به سرور $who وصل نشد"
+        // The line dropped mid-request (an EOF, a reset): the server may or may not have got it.
+        is java.io.IOException -> "ارتباط با $who وسط کار قطع شد"
         else -> e.javaClass.simpleName + (e.message?.let { ": $it" } ?: "")
+    }
+
+    /**
+     * Why a webhook did not take an SMS, in the seller's words. Only the status means anything: the
+     * reply is a stranger's, and a 404 there is a wrong address, not a revoked pairing. Pure.
+     */
+    fun hookReason(reply: Reply): String = when {
+        reply.error != null -> reply.error
+        reply.code == 429 -> "سرور وب‌هوک گفت آهسته‌تر (429)"
+        reply.code >= 500 -> "خطای سرور وب‌هوک (" + reply.code + ")"
+        reply.code == 404 -> "آدرس وب‌هوک پیدا نشد (404) — آدرس را بررسی کنید"
+        reply.code == 401 || reply.code == 403 -> "وب‌هوک اجازه نداد (" + reply.code + ") — آدرس یا شناسهٔ حساب را بررسی کنید"
+        else -> "وب‌هوک پیامک را نپذیرفت (" + reply.code + ")"
     }
 
     /**
@@ -117,7 +138,44 @@ object Net {
             sent++
             approval(reply.body)?.let { (amount, customer) -> Alerts.approved(context, amount, customer) }
         }
+        // After the bot, never instead of it: a stop above (no internet, the bot down) is no reason to
+        // keep a webhook waiting, and a webhook down is no reason to hold the bot.
+        runCatching { flushHooks(store) }
         StatusWidget.refresh(context)
+        return sent
+    }
+
+    /**
+     * Each webhook's queue on its own, oldest first. The same order rule as the bot's: a temporary
+     * failure stops THAT webhook's run, a refusal drops the one SMS. Returns how many went.
+     */
+    fun flushHooks(store: Store): Int {
+        var sent = 0
+        // The feature switched off in «بیشتر»: what is queued waits, nothing goes.
+        for (hook in store.activeHooks) {
+            // Switched off: what is queued waits for it to be switched on again.
+            if (!hook.on) continue
+            for (item in store.hookQueue(hook.id)) {
+                val id = item.optString("id")
+                val reply = postForm(hook.url, Hooks.form(item.optString("message"), item.optString("from")))
+                if (reply.ok) {
+                    store.remove(id)
+                    store.updateEvent(id, "sent", "به وب‌هوک رسید")
+                    store.hookResult(hook.id, true, null)
+                    sent++
+                    continue
+                }
+                val reason = hookReason(reply)
+                store.hookResult(hook.id, false, reason)
+                if (reply.retryable) {
+                    store.bump(id)
+                    store.updateEvent(id, "retry", "فرستاده نشد: $reason — دوباره تلاش می‌شود")
+                    break
+                }
+                store.remove(id)
+                store.updateEvent(id, "failed", reason)
+            }
+        }
         return sent
     }
 

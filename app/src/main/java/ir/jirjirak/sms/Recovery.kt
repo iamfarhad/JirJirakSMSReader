@@ -5,8 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
-import org.json.JSONObject
-import java.util.UUID
 
 /**
  * «بازیابی پیامک‌های جامانده»: the bank SMS that reached the phone while the app could not hear
@@ -14,7 +12,7 @@ import java.util.UUID
  * like any other. Opt-in (it needs READ_SMS), and bounded three ways:
  *
  *  - never before the moment the seller turned it on, and never more than [WINDOW_MS] back;
- *  - only allowed senders, never a password (the same [Rules] as the receiver);
+ *  - only allowed senders (the bot's, or a webhook's own), never a password (the same [Rules] as the receiver);
  *  - never an SMS this phone already handled ([Rules.fingerprint] in [Outbox]'s `seen`).
  *
  * The bot dedupes too (the SMS's own day, BankSmsController::smsDay), so even a slip here cannot
@@ -63,25 +61,19 @@ object Recovery {
         if (!force && now - store.lastRecovery in 0 until MIN_GAP_MS) return 0
         val since = maxOf(store.recoveryFrom, now - WINDOW_MS)
         val logged = store.events().filter { it.optString("kind") == "sms" }.map { logKey(it.optString("from"), it.optString("body")) }.toSet()
-        val found = pick(read(context, since), store.senders, since, logged) { store.seen(it) }
+        val inbox = read(context, since)
         var queued = 0
-        for ((sms, fp) in found) {
-            val id = UUID.randomUUID().toString()
-            val fresh = store.enqueue(
-                JSONObject()
-                    .put("id", id)
-                    .put("message", sms.body)
-                    .put("from", sms.from)
-                    // The day the phone got it — the bot dedupes on that day, not on today.
-                    .put("received_at", sms.date / 1000)
-                    .put("sent_at", sms.dateSent)
-                    .put("recovered", true)
-                    .put("source", "jirjirak-sms/" + BuildConfig.VERSION_NAME),
-                fp,
-            )
-            if (fresh) {
-                queued++
-                store.event("sms", "queued", "پیامک جامانده بازیابی شد", "این پیامک وقتی برنامه در دسترس نبود رسیده بود؛ حالا فرستاده می‌شود.", sms.from, sms.body, id)
+        for ((sms, fp) in pick(inbox, store.senders, since, logged) { store.seen(it) }) {
+            // The day the phone got it — the bot dedupes on that day, not on today.
+            if (Forward.queue(store, sms.from, sms.body, sms.dateSent, fp, null, recovered = true, receivedAt = sms.date)) queued++
+        }
+        // Each webhook its own pass, over its own sender. Only SMS with an SMS-centre stamp: without one
+        // the receiver's fingerprint and the inbox's differ, and a webhook has no dedupe of its own —
+        // the bot's second check (the event log) is no help to a stranger's server.
+        for (hook in store.activeHooks.filter { it.on }) {
+            val stamped = inbox.filter { it.dateSent > 0 }
+            for ((sms, fp) in pick(stamped, listOf(hook.sender), since) { store.seen(Hooks.seenKey(it, hook.id)) }) {
+                if (Forward.queue(store, sms.from, sms.body, sms.dateSent, Hooks.seenKey(fp, hook.id), hook, recovered = true, receivedAt = sms.date)) queued++
             }
         }
         store.lastRecovery = now

@@ -117,6 +117,8 @@
 | 43 more-security / 93 manage-clear | `more("security")` | وجود کدها، نه خودشان |
 | 44 more-recovery / 56 recovery-denied / 90–92 | `more("recovery")` | `Recovery.scan`؛ نتیجه «در صف» است نه «ارسال شد» |
 | 45 more-notify | `more("notify")` | `store.notify*` |
+| (۱.۴) وب‌هوک‌های دیگر — فهرست | `more("hooks")`؛ تا `store.hooksOn` خاموش است، ردیف «بیشتر» فقط دیالوگ روشن کردن را باز می‌کند | `store.hooks`، `hookQueueSize()` |
+| (۱.۴) وب‌هوک — افزودن/ویرایش/خاموش/حذف | `more("hook:new")` / `more("hook:<id>")` | `Hooks.parseUrl`، `store.saveHook` / `deleteHook` |
 | 46 more-formats / 59 formats-empty / 94 format-delete | `more("formats")` | `/receipts/formats` |
 | 47 more-update / 58 update-error / 95 update-checking / 96 update-current | `more("update")` | `Updates.check`؛ لینک در مرورگر، بدون نصب |
 | 48 more-appearance / 51 widget / 63 widget-unavailable | `more("appearance")` | `StatusWidget.requestPin` |

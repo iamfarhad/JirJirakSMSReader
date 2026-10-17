@@ -136,6 +136,71 @@ class Store(context: Context) {
         suggestions = suggestions.filter { it != s }
     }
 
+    // ── webhooks: the seller's own addresses, each for one sender ──────
+
+    /**
+     * The seller's webhooks, in the order added. The address usually carries the account it posts to
+     * (`?userId=…`), so it is sealed like the pairing code; one that does not open on this phone (data
+     * restored from another) is left out rather than guessed.
+     */
+    var hooks: List<Hook>
+        get() {
+            val rows = runCatching { JSONArray(prefs.getString("hooks", null) ?: "[]") }.getOrDefault(JSONArray())
+            return (0 until rows.length()).mapNotNull { i ->
+                val o = rows.optJSONObject(i) ?: return@mapNotNull null
+                val url = Secrets.open(o.optString("url").ifEmpty { null }) ?: return@mapNotNull null
+                Hook(
+                    id = o.optString("id"), url = url, sender = o.optString("sender"), on = o.optBoolean("on", true),
+                    lastAt = o.optLong("last_at", 0),
+                    lastOk = if (o.has("last_ok")) o.optBoolean("last_ok") else null,
+                    lastNote = o.optString("last_note").ifEmpty { null },
+                )
+            }
+        }
+        private set(v) {
+            val rows = JSONArray()
+            for (h in v) {
+                val sealed = if (sealBroken) h.url else runCatching { Secrets.seal(h.url) }.getOrElse { sealBroken = true; h.url }
+                rows.put(
+                    JSONObject().put("id", h.id).put("url", sealed).put("sender", h.sender).put("on", h.on)
+                        .put("last_at", h.lastAt).apply {
+                            h.lastOk?.let { put("last_ok", it) }
+                            h.lastNote?.let { put("last_note", it) }
+                        },
+                )
+            }
+            commit(prefs.edit().putString("hooks", rows.toString()))
+        }
+
+    /**
+     * «وب‌هوک‌های دیگر» is off until the seller turns it on in «بیشتر»: most shops never need it, and
+     * off means hidden AND silent — no webhook gets an SMS, whatever is saved.
+     */
+    var hooksOn: Boolean
+        get() = prefs.getBoolean("hooks_on", false)
+        set(v) = commit(prefs.edit().putBoolean("hooks_on", v))
+
+    /** The webhooks that may receive anything now: none while the feature is off. */
+    val activeHooks: List<Hook> get() = if (hooksOn) hooks else emptyList()
+
+    /** Add a webhook, or replace the one with the same id where it stands in the list. */
+    fun saveHook(hook: Hook) = synchronized(LOCK) {
+        val now = hooks
+        hooks = if (now.any { it.id == hook.id }) now.map { if (it.id == hook.id) hook else it } else now + hook
+    }
+
+    /** Remove a webhook and whatever was still waiting for it. */
+    fun deleteHook(id: String) = synchronized(LOCK) {
+        hooks = hooks.filter { it.id != id }
+        Outbox.get(app).clearTarget(id)
+        bump()
+    }
+
+    /** The last delivery's outcome, for the list: ok, or why not. */
+    fun hookResult(id: String, ok: Boolean, note: String?) = synchronized(LOCK) {
+        hooks = hooks.map { if (it.id == id) it.copy(lastAt = System.currentTimeMillis(), lastOk = ok, lastNote = note) else it }
+    }
+
     // ── what happened ───────────────────────────────────────────────────
 
     var lastPing: Long
@@ -366,11 +431,18 @@ class Store(context: Context) {
         return box
     }
 
-    /** Queue one SMS; false when this same SMS ([fingerprint]) was queued before. */
-    fun enqueue(item: JSONObject, fingerprint: String? = null): Boolean =
-        outbox().enqueue(item, fingerprint).also { if (it) bump() }
+    /** Queue one SMS for [target] (the bot, or a webhook's id); false when it was queued for it before. */
+    fun enqueue(item: JSONObject, fingerprint: String? = null, target: String = Hooks.BOT): Boolean =
+        outbox().enqueue(item, fingerprint, target).also { if (it) bump() }
 
+    /** What waits for the bot. */
     fun queue(): List<JSONObject> = outbox().all()
+
+    /** What waits for one webhook. */
+    fun hookQueue(id: String): List<JSONObject> = outbox().all(id)
+
+    /** What waits for the webhooks — one of them when [id] is given, all of them otherwise. */
+    fun hookQueueSize(id: String? = null): Int = outbox().hookSize(id)
 
     /** Cached per write like the events: the dashboard and the widget ask on every frame. */
     fun queueSize(): Int {

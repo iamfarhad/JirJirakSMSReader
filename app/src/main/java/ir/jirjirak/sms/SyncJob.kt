@@ -25,7 +25,7 @@ class SyncJob : JobService() {
             // The retry job asks to be run again (with its backoff) while anything is still queued;
             // `false` here made the backoff dead config and a failed retry the last one.
             val store = Store(this)
-            val again = params.jobId == RETRY && runCatching { store.queueSize() > 0 }.getOrDefault(false) && store.endpoint != null
+            val again = params.jobId == RETRY && runCatching { store.queueSize() + store.hookQueueSize() > 0 }.getOrDefault(false) && store.endpoint != null
             jobFinished(params, again)
         }.start()
         return true

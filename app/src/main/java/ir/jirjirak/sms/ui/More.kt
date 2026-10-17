@@ -54,7 +54,9 @@ fun MoreTab(store: Store, now: Long, route: String) {
         "appearance" -> AppearanceScreen(store, now)
         "connection" -> ConnectionScreen(store, now)
         "subscription" -> SubscriptionScreen(store, now)
-        else -> MoreHub(store, now)
+        // Off, the feature has no screens: a stale route (a rotation, a test) lands on the hub.
+        "hooks" -> if (store.hooksOn) HooksScreen(store, now) else MoreHub(store, now)
+        else -> if (route.startsWith("hook:") && store.hooksOn) HookEditScreen(store, route.removePrefix("hook:")) else MoreHub(store, now)
     }
 }
 
@@ -64,6 +66,7 @@ private fun MoreHub(store: Store, now: Long) {
     val nav = LocalNav.current
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
+    var enablingHooks by remember { mutableStateOf(false) }
     val alive = States.online(store.lastPing, now)
     val summary = SummaryCache.value.takeIf { store.manageKey != null }
     val latest = Updates.available(context)
@@ -104,11 +107,39 @@ private fun MoreHub(store: Store, now: Long) {
                     onClick = { nav.more("subscription") },
                 )
             },
+            {
+                // Off by default: the row only offers the feature; turned on, it is the way in.
+                val hooks = store.hooks
+                if (!store.hooksOn) {
+                    ListRow(Ico.External, Tone.muted, "وب‌هوک‌های دیگر", "ارسال پیامک یک شماره به آدرس دلخواه شما · خاموش",
+                        badge = "روشن کردن", badgeTone = Tone.info, onClick = { enablingHooks = true })
+                } else {
+                    ListRow(
+                        Ico.External, if (hooks.any { it.on && it.lastOk == false }) Tone.warn else Tone.good, "وب‌هوک‌های دیگر",
+                        if (hooks.isEmpty()) "روشن · هنوز وب‌هوکی اضافه نشده"
+                        else Persian.number(hooks.size) + " وب‌هوک · " + Persian.number(hooks.count { it.on }) + " روشن",
+                        badge = "روشن", onClick = { nav.more("hooks") },
+                    )
+                }
+            },
             { ListRow(Ico.Info, Tone.muted, "اتصال فروشگاه", "مدیریت اتصال این گوشی", onClick = { nav.more("connection") }) },
         )
     }
     JirjirakLinks()
     VersionLine()
+    if (enablingHooks) {
+        ConfirmDialog(
+            "«وب‌هوک‌های دیگر» روشن شود؟",
+            "با روشن کردن، می‌توانید آدرس وب‌هوک خودتان را وارد کنید و پیامک بانکِ یک شمارهٔ مشخص، جدا از ربات، به آن آدرس هم فرستاده شود. " +
+                "تا وب‌هوکی اضافه نکنید چیزی فرستاده نمی‌شود و هر وقت بخواهید خاموشش می‌کنید.",
+            "روشن کن", {
+                store.hooksOn = true
+                store.event("system", "info", "قابلیت «وب‌هوک‌های دیگر» روشن شد")
+                enablingHooks = false
+                nav.more("hooks")
+            }, { enablingHooks = false }, cancel = "نه، فعلاً",
+        )
+    }
 }
 
 // ── keys on this phone (43, 93) ─────────────────────────────────────────
