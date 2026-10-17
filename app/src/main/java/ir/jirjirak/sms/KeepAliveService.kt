@@ -20,6 +20,11 @@ import androidx.core.content.ContextCompat
  *
  * The beat itself (deliver, ping, every 5 minutes) is an alarm — see Beat — which this service arms.
  *
+ * The notification cannot be cleared. «Clear all» never touched it (it is ongoing), but from Android
+ * 14 a swipe dismisses even an ongoing foreground notification, and no flag stops that. So a swipe is
+ * answered: the notification's delete intent reaches [Repost], which shows it again at once — the
+ * seller sees it come back instead of losing the one sign that the app is awake.
+ *
  * `specialUse` type: the app is sideloaded (no Play listing to justify it to), and `dataSync` is
  * capped at six hours a day from Android 15 — this has to run all day.
  */
@@ -57,9 +62,17 @@ class KeepAliveService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** A swipe dismissed the notification (Android 14+): show it again, while the app is paired. */
+    class Repost : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (Store(context).endpoint == null) return
+            runCatching { context.getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification(context)) }
+        }
+    }
+
     companion object {
         private const val CHANNEL = "keepalive"
-        private const val NOTIFICATION_ID = 1
+        internal const val NOTIFICATION_ID = 1
         private const val BEAT_MS = 5 * 60 * 1000L
 
         fun start(context: Context) {
@@ -73,7 +86,7 @@ class KeepAliveService : Service() {
             context.stopService(Intent(context, KeepAliveService::class.java))
         }
 
-        private fun notification(context: Context): Notification {
+        internal fun notification(context: Context): Notification {
             val manager = context.getSystemService(NotificationManager::class.java)
             if (Build.VERSION.SDK_INT >= 26) {
                 manager?.createNotificationChannel(
@@ -87,6 +100,10 @@ class KeepAliveService : Service() {
                 context, 0, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
+            val repost = PendingIntent.getBroadcast(
+                context, 0, Intent(context, Repost::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
             val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else @Suppress("DEPRECATION") Notification.Builder(context)
             return builder
                 .setSmallIcon(R.drawable.ic_notification)
@@ -94,6 +111,7 @@ class KeepAliveService : Service() {
                 .setContentText("پیامک‌های بانک به ربات فروشگاه فرستاده می‌شود")
                 .setContentIntent(open)
                 .setOngoing(true)
+                .setDeleteIntent(repost)
                 .build()
         }
     }

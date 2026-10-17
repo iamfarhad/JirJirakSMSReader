@@ -73,6 +73,11 @@
             android:name=".Beat"
             android:exported="false" />
 
+        <!-- The keep-alive notification swiped away (Android 14+): shown again. -->
+        <receiver
+            android:name=".KeepAliveService$Repost"
+            android:exported="false" />
+
         <service
             android:name=".KeepAliveService"
             android:exported="false"
