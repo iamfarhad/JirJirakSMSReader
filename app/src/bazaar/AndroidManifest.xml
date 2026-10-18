@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Cafe Bazaar build. Bazaar allows the SMS permission group only where it is needed, so this copy
+  does not read the SMS inbox: no «بازیابی پیامک‌های جامانده», no «پیدا کردن خودکار شمارهٔ بانک».
+  It only hears new SMS (RECEIVE_SMS), from the senders the seller allows by hand.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.READ_SMS" tools:node="remove" />
+
+</manifest>

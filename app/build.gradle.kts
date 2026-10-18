@@ -56,6 +56,21 @@ android {
         }
     }
 
+    // Two copies of the same app — one package, one key, one version: «github» (the APK the bot links)
+    // and «bazaar» (Cafe Bazaar's rules: no self-update, no GitHub link, no SMS inbox). See Edition.kt.
+    flavorDimensions += "store"
+    productFlavors {
+        create("github") {
+            dimension = "store"
+            isDefault = true
+            buildConfigField("String", "STORE", "\"github\"")
+        }
+        create("bazaar") {
+            dimension = "store"
+            buildConfigField("String", "STORE", "\"bazaar\"")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

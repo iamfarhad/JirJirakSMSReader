@@ -65,7 +65,7 @@ fun HomeTab(store: Store, now: Long, resumed: Int, route: String) {
         "setup_done" -> SetupDoneScreen(store)
         "notify_denied" -> NotifyDeniedScreen()
         "senders" -> SendersScreen(store)
-        "pick" -> PickSenderScreen(store)
+        "pick" -> if (ir.jirjirak.sms.Edition.readsInbox) PickSenderScreen(store) else ManualSenderScreen(store)
         "manual" -> ManualSenderScreen(store)
         "health" -> HealthScreen(store)
         "queue" -> QueueScreen(store, now)
@@ -475,9 +475,12 @@ private fun QueueScreen(store: Store, now: Long) {
             AppCard(title = "برای رفع مشکل") {
                 Rows(
                     { ListRow(Ico.Alert, Tone.bad, "فضای آزاد گوشی", "حافظهٔ دستگاه را بررسی کنید.", badge = "کمبود فضا") },
-                    { ListRow(Ico.Refresh, Tone.info, "بازیابی پیامک‌ها", "پیامک هنوز در صندوق گوشی است؛ حذفش نکنید. بازیابی فقط پیامک‌های بعد از روشن‌کردن آن را پیدا می‌کند.", badge = "پیشنهاد") },
+                    {
+                        if (ir.jirjirak.sms.Edition.readsInbox) ListRow(Ico.Refresh, Tone.info, "بازیابی پیامک‌ها", "پیامک هنوز در صندوق گوشی است؛ حذفش نکنید. بازیابی فقط پیامک‌های بعد از روشن‌کردن آن را پیدا می‌کند.", badge = "پیشنهاد")
+                        else ListRow(Ico.Inbox, Tone.info, "پیامک در صندوق گوشی است", "حذفش نکنید؛ بعد از آزاد کردن فضا، از «رسیدها ← مغایرت» یا خود ربات ثبتش کنید.")
+                    },
                 )
-                PrimaryButton("رفتن به بازیابی پیامک‌ها", { nav.more("recovery") })
+                if (ir.jirjirak.sms.Edition.readsInbox) PrimaryButton("رفتن به بازیابی پیامک‌ها", { nav.more("recovery") })
             }
         }
         AppCard(title = "ارسال‌های ناموفق") {

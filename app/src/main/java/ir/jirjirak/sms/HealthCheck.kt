@@ -32,6 +32,8 @@ object HealthCheck {
         val queued: Int,
         val recoveryOn: Boolean,
         val readSms: Boolean,
+        /** False in a copy that cannot read the inbox at all (Bazaar): the step is left out. */
+        val recoveryAvailable: Boolean = true,
     )
 
     /** The bot's answer: null when it could not be reached; [code] is the HTTP status. */
@@ -52,7 +54,7 @@ object HealthCheck {
             local.queued == 0 -> Step("صف گوشی", State.OK, "پیامکی منتظر ارسال نیست.")
             else -> Step("صف گوشی", State.WARN, ir.jirjirak.sms.ui.Persian.number(local.queued) + " پیامک منتظر اینترنت است.")
         }
-        out += when {
+        if (local.recoveryAvailable) out += when {
             local.recoveryOn && local.readSms -> Step("بازیابی پیامک‌های جامانده", State.OK, "پیامکی که در نبودِ برنامه برسد، از صندوق پیامک پیدا و فرستاده می‌شود.")
             local.recoveryOn -> Step("بازیابی پیامک‌های جامانده", State.WARN, "روشن است ولی اجازهٔ خواندن پیامک داده نشده.")
             else -> Step("بازیابی پیامک‌های جامانده", State.INFO, "خاموش است. اگر گوشی گاهی برنامه را می‌بندد، از «بیشتر» روشنش کنید.")
@@ -145,6 +147,7 @@ object HealthCheck {
             queued = store.queueSize(),
             recoveryOn = store.recoveryOn,
             readSms = Recovery.permitted(context),
+            recoveryAvailable = Edition.readsInbox,
         )
         val endpoint = store.endpoint ?: return steps(local, null, false)
         val ping = Net.ping(context, endpoint)

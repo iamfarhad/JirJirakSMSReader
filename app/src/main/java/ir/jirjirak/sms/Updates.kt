@@ -30,6 +30,8 @@ import java.net.URL
  *
  * An APK installed by hand never updates itself, and an old copy is a silent risk: a fix to what may
  * leave the phone only protects the sellers who install it.
+ *
+ * The Bazaar copy checks nothing and announces nothing: Bazaar updates it (Edition).
  */
 object Updates {
 
@@ -49,6 +51,7 @@ object Updates {
         val store = Store(context)
         store.lastUpdateCheck = System.currentTimeMillis()
         if (store.endpoint != null) runCatching { Net.ping(context) }
+        if (!Edition.selfUpdates) return null
         val latest = fromBot(store) ?: fromGitHub() ?: return null
         store.latestVersion = latest.version
         store.latestUrl = latest.url
@@ -57,6 +60,7 @@ object Updates {
 
     /** From the background beat: at most every 6 hours; a new version is announced once, with its link. */
     fun checkInBackground(context: Context) {
+        if (!Edition.selfUpdates) return
         val store = Store(context)
         if (System.currentTimeMillis() - store.lastUpdateCheck < EVERY_MS) return
         val latest = check(context) ?: return
@@ -73,6 +77,7 @@ object Updates {
      * next six-hourly check.
      */
     fun available(context: Context): Latest? {
+        if (!Edition.selfUpdates) return null
         val store = Store(context)
         val known = store.latestVersion?.let { v -> store.latestUrl?.let { Latest(v, it) } }
         val bot = fromBot(store)

@@ -233,4 +233,11 @@ class RecoveryAndHealthTest {
         assertTrue(s.devices[1].quiet)
         assertEquals(1792058000000L, s.devices[0].at)
     }
+
+    @Test
+    fun `a copy that cannot read the inbox has no recovery step at all, not a «turn it on» hint`() {
+        val bazaar = healthy.copy(recoveryOn = false, readSms = false, recoveryAvailable = false)
+        assertTrue(HealthCheck.steps(bazaar, null, false).none { it.title.contains("بازیابی") })
+        assertTrue(HealthCheck.steps(healthy, null, false).any { it.title.contains("بازیابی") })
+    }
 }
