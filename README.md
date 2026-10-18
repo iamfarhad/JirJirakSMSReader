@@ -107,20 +107,6 @@ Kotlin + Jetpack Compose, no third-party libraries. Persian RTL UI in Vazirmatn 
 
 The bot side lives in the Jirjirak bot: `POST /api/bank-sms/{secret}` (ingest) and `…/ping` (heartbeat).
 
-### Two builds: GitHub and Cafe Bazaar
-
-One package, one signing key, one version, two product flavors (`Edition`):
-
-| | `github` (the APK the bot links) | `bazaar` (uploaded to Cafe Bazaar by hand) |
-|---|---|---|
-| Updates | checks the bot / GitHub, notifies, opens the download link | none in the app — Bazaar updates it; «به‌روزرسانی» opens the Bazaar page |
-| GitHub link | in «جیرجیرک» | none (Bazaar: no other distribution source) |
-| SMS permissions | `RECEIVE_SMS` + `READ_SMS` | `RECEIVE_SMS` only — no recovery, no picking a sender from the inbox; the next bank SMS's sender is offered under «پیشنهاد» |
-
-`./gradlew assembleGithubRelease assembleBazaarRelease`; unit tests `testGithubDebugUnitTest testBazaarDebugUnitTest`,
-device tests `connectedGithubDebugAndroidTest`. A `v*` tag attaches both APKs to the release
-(`JirjirakSMS.apk`, `JirjirakSMS-bazaar.apk`).
-
 ### Versioning
 
 SemVer in [`version.properties`](version.properties) is the single source. `versionCode` is derived

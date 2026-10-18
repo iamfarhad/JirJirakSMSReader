@@ -47,7 +47,7 @@ fun MoreTab(store: Store, now: Long, route: String) {
     watchStore()
     when (route) {
         "security" -> SecurityScreen(store)
-        "recovery" -> if (ir.jirjirak.sms.Edition.readsInbox) RecoveryScreen(store, now) else MoreHub(store, now)
+        "recovery" -> RecoveryScreen(store, now)
         "notify" -> NotificationsScreen(store)
         "formats" -> FormatsScreen(store)
         "update" -> UpdateScreen(store, now)
@@ -92,19 +92,12 @@ private fun MoreHub(store: Store, now: Long) {
         })
     }
     AppCard(title = "تنظیمات") {
-        // A row a copy does not have is left out of the list, not drawn empty between two hairlines.
-        val rows = mutableListOf<@Composable () -> Unit>()
-        rows.addAll(listOf<@Composable () -> Unit>(
+        Rows(
             { ListRow(Ico.Shield, Tone.muted, "امنیت و دسترسی‌ها", "کد اتصال و کد مدیریت، جدا از هم", onClick = { nav.more("security") }) },
-        ))
-        if (ir.jirjirak.sms.Edition.readsInbox) rows += { ListRow(Ico.Refresh, Tone.muted, "بازیابی پیامک‌های جامانده", if (store.recoveryOn) "روشن" else "اختیاری · خاموش", onClick = { nav.more("recovery") }) }
-        rows.addAll(listOf<@Composable () -> Unit>(
+            { ListRow(Ico.Refresh, Tone.muted, "بازیابی پیامک‌های جامانده", if (store.recoveryOn) "روشن" else "اختیاری · خاموش", onClick = { nav.more("recovery") }) },
             { ListRow(Ico.Bell, Tone.muted, "اعلان‌ها", "رسید منتظر، مغایرت، سکوت شبانه", onClick = { nav.more("notify") }) },
             { ListRow(Ico.Sun, Tone.muted, "ظاهر و ویجت", "روشن، تاریک، مانند گوشی", onClick = { nav.more("appearance") }) },
-            {
-                if (ir.jirjirak.sms.Edition.bazaar) ListRow(Ico.Sync, Tone.muted, "به‌روزرسانی", "از طریق کافه‌بازار", onClick = { nav.more("update") })
-                else ListRow(Ico.Sync, if (latest != null) Tone.good else Tone.muted, "به‌روزرسانی", latest?.let { "نسخهٔ " + Persian.sender(it.version) + " آماده است" } ?: "آخرین نسخهٔ برنامه", badge = latest?.let { "جدید" }, onClick = { nav.more("update") })
-            },
+            { ListRow(Ico.Sync, if (latest != null) Tone.good else Tone.muted, "به‌روزرسانی", latest?.let { "نسخهٔ " + Persian.sender(it.version) + " آماده است" } ?: "آخرین نسخهٔ برنامه", badge = latest?.let { "جدید" }, onClick = { nav.more("update") }) },
             { ListRow(Ico.Bank, Tone.muted, "قالب‌های بانک", "قالب‌های آموزش‌داده‌شده", onClick = { nav.more("formats") }) },
             {
                 ListRow(
@@ -130,8 +123,7 @@ private fun MoreHub(store: Store, now: Long) {
                 }
             },
             { ListRow(Ico.Info, Tone.muted, "اتصال فروشگاه", "مدیریت اتصال این گوشی", onClick = { nav.more("connection") }) },
-        ))
-        Rows(*rows.toTypedArray())
+        )
     }
     JirjirakLinks()
     VersionLine()
@@ -204,7 +196,6 @@ private fun SecurityScreen(store: Store) {
 
 @Composable
 private fun UpdateScreen(store: Store, now: Long) {
-    if (ir.jirjirak.sms.Edition.bazaar) return BazaarUpdateScreen()
     val context = LocalContext.current
     val nav = LocalNav.current
     val scope = rememberCoroutineScope()
@@ -249,21 +240,6 @@ private fun UpdateScreen(store: Store, now: Long) {
     }
     if (failed == true) Notice("نسخهٔ فعلی همچنان قابل استفاده است.", null, Tone.info)
     Notice("نصب خودکار انجام نمی‌شود", "«دریافت» لینک را در مرورگر باز می‌کند؛ بعد از دانلود، فایل را باز کنید و «نصب» را بزنید. تنظیمات و شماره‌ها می‌مانند.", Tone.info)
-}
-
-/** The Bazaar copy: Bazaar updates it, so this screen only says so and opens the app's page there. */
-@Composable
-private fun BazaarUpdateScreen() {
-    val context = LocalContext.current
-    val nav = LocalNav.current
-    val installed = BuildConfig.VERSION_NAME.substringBefore('-')
-    ScreenHeader("به‌روزرسانی", "بیشتر") { nav.more() }
-    Hero("به‌روزرسانی از کافه‌بازار", "نسخه‌های تازه از طریق کافه‌بازار نصب می‌شوند.", Tone.info, Art.Update)
-    AppCard(title = "وضعیت برنامه") {
-        ListRow(Ico.Info, Tone.muted, "نسخهٔ نصب‌شده", Persian.sender(installed))
-        PrimaryButton("صفحهٔ برنامه در کافه‌بازار", { ir.jirjirak.sms.Edition.openStorePage(context) }, icon = Ico.External)
-    }
-    Notice("به‌روزرسانی خودکار", "اگر به‌روزرسانی خودکار بازار روشن باشد، نسخهٔ تازه بدون کار شما نصب می‌شود. تنظیمات و شماره‌ها می‌مانند.", Tone.info)
 }
 
 // ── look and the home-screen widget (48, 51, 63) ────────────────────────

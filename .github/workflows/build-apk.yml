@@ -41,7 +41,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests
-        run: ./gradlew testGithubDebugUnitTest testBazaarDebugUnitTest --no-daemon
+        run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Build
         env:
@@ -50,23 +50,19 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # Two copies of one app (app/build.gradle.kts): «github», the APK the bot links, and
-          # «bazaar», the one uploaded to Cafe Bazaar (no self-update, no SMS inbox).
           if [ "$HAS_KEY" = "1" ]; then
-            ./gradlew assembleGithubDebug assembleGithubRelease assembleBazaarRelease --no-daemon
+            ./gradlew assembleDebug assembleRelease --no-daemon
           else
-            ./gradlew assembleGithubDebug --no-daemon
+            ./gradlew assembleDebug --no-daemon
           fi
 
       - name: Collect APKs
         run: |
           mkdir -p output-apks
-          cp app/build/outputs/apk/github/debug/app-github-debug.apk output-apks/JirjirakSMS-debug.apk
-          if [ -f app/build/outputs/apk/github/release/app-github-release.apk ]; then
+          cp app/build/outputs/apk/debug/app-debug.apk output-apks/JirjirakSMS-debug.apk
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             # One stable name, so the bot can link releases/latest/download/JirjirakSMS.apk.
-            cp app/build/outputs/apk/github/release/app-github-release.apk output-apks/JirjirakSMS.apk
-            # For uploading to Cafe Bazaar by hand — never what the bot links.
-            cp app/build/outputs/apk/bazaar/release/app-bazaar-release.apk output-apks/JirjirakSMS-bazaar.apk
+            cp app/build/outputs/apk/release/app-release.apk output-apks/JirjirakSMS.apk
           fi
           ls -la output-apks/
 
@@ -82,9 +78,7 @@ jobs:
         with:
           name: جیرجیرک پیامک ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          files: |
-            output-apks/JirjirakSMS.apk
-            output-apks/JirjirakSMS-bazaar.apk
+          files: output-apks/JirjirakSMS.apk
           # No APK, no release: the bot links releases/latest/download/JirjirakSMS.apk.
           fail_on_unmatched_files: true
         env:

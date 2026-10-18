@@ -383,19 +383,8 @@ internal fun SendersScreen(store: Store) {
     if (senders.isEmpty()) {
         Hero("بانک خود را معرفی کنید", "فقط پیامک شماره‌های بانکی که شما انتخاب می‌کنید ارسال می‌شوند.", Tone.info, icon = Ico.Bank)
         EmptyState("هنوز شمارهٔ بانکی ندارید", "برای شروع، یک فرستندهٔ بانکی اضافه کنید.", Art.Bank)
-        if (ir.jirjirak.sms.Edition.readsInbox) {
-            PrimaryButton("پیدا کردن خودکار شمارهٔ بانک", { nav.home("pick") }, icon = Ico.Search)
-            SecondaryButton("نوشتن شماره به‌صورت دستی", { nav.home("manual") })
-        } else {
-            // No inbox here (Bazaar): the number comes from the seller, or from the next bank SMS —
-            // the receiver offers its sender below under «پیشنهاد», never its text.
-            PrimaryButton("نوشتن شمارهٔ بانک", { nav.home("manual") })
-            Notice(
-                "یا منتظر اولین پیامک بانک بمانید",
-                "پیامک واریز یا برداشت بعدی که برسد، شمارهٔ فرستنده‌اش همین‌جا زیر «پیشنهاد» می‌آید و با یک لمس مجازش می‌کنید. متن آن پیامک جایی فرستاده نمی‌شود.",
-                Tone.info, Ico.Inbox,
-            )
-        }
+        PrimaryButton("پیدا کردن خودکار شمارهٔ بانک", { nav.home("pick") }, icon = Ico.Search)
+        SecondaryButton("نوشتن شماره به‌صورت دستی", { nav.home("manual") })
         Notice("هیچ پیامکی بدون مجوز شما از گوشی خارج نمی‌شود.", null, Tone.good)
     } else {
         Hero(Persian.number(senders.size) + " فرستنده مجاز است", "ارسال پیامک تنها از همین فرستنده‌ها انجام می‌شود.", Tone.good, icon = Ico.Bank)
@@ -406,12 +395,8 @@ internal fun SendersScreen(store: Store) {
             }
         }
         AppCard(title = "افزودن شماره") {
-            if (ir.jirjirak.sms.Edition.readsInbox) {
-                PrimaryButton("انتخاب از پیامک‌ها", { nav.home("pick") })
-                SecondaryButton("نوشتن شماره", { nav.home("manual") })
-            } else {
-                PrimaryButton("نوشتن شماره", { nav.home("manual") })
-            }
+            PrimaryButton("انتخاب از پیامک‌ها", { nav.home("pick") })
+            SecondaryButton("نوشتن شماره", { nav.home("manual") })
         }
         Notice("برای حذف یک شماره، تأیید مجدد لازم است.", null, Tone.info)
     }
@@ -581,12 +566,11 @@ fun JirjirakLinks() {
         Rows(
             { ListRow(Ico.Mail, Tone.info, "کانال اخبار و آموزش", Persian.latin("@JirjirakPremium"), onClick = { openTelegram(context, "JirjirakPremium") }) },
             { ListRow(Ico.Sparkles, Tone.good, "ربات جیرجیرک", "ساخت ربات فروش با ۳ روز تست رایگان", onClick = { openTelegram(context, "JirjirakPremiumBot") }) },
-            // The Bazaar copy names no other place the app is distributed (Edition).
-            *(if (ir.jirjirak.sms.Edition.selfUpdates) arrayOf<@Composable () -> Unit>({
+            {
                 ListRow(Ico.External, Tone.muted, "راهنما و سورس برنامه", Persian.latin("github.com/iamfarhad/JirJirakSMSReader"), onClick = {
                     ir.jirjirak.sms.Updates.open(context, "https://github.com/iamfarhad/JirJirakSMSReader")
                 })
-            }) else emptyArray()),
+            },
         )
     }
 }
