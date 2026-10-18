@@ -46,7 +46,11 @@ object SummaryCache {
         if (store.manageKey == null || loading) return
         loading = true
         when (val r = withContext(Dispatchers.IO) { Receipts.summary(context.applicationContext) }) {
-            is Receipts.Result.Ok -> { value = r.value; at = System.currentTimeMillis(); failed = null }
+            is Receipts.Result.Ok -> {
+                value = r.value; at = System.currentTimeMillis(); failed = null
+                // The bot's counts now: a receipt decided there takes the notification down with it.
+                withContext(Dispatchers.IO) { ir.jirjirak.sms.Alerts.seen(context.applicationContext, r.value.metrics.needsReview, r.value.openMismatch) }
+            }
             Receipts.Result.NeedKey -> { store.revokeManageKey(); clear() }
             is Receipts.Result.Failed -> failed = r.message
             Receipts.Result.AlreadyDecided -> {}

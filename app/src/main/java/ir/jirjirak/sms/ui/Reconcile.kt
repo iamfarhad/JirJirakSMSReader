@@ -130,6 +130,8 @@ internal fun AssignScreen(store: Store, deposit: Receipts.Item, now: Long, onBac
     var attempt by remember { mutableIntStateOf(0) }
     var chosen by remember { mutableStateOf<Receipts.Item?>(null) }
     var phase by remember { mutableStateOf<AssignPhase>(AssignPhase.Picking) }
+    // A 409: someone settled the deposit or the receipt first — said, and the choices read again.
+    var settled by remember { mutableStateOf(false) }
     val depositAmount = deposit.amount?.let { Money.toman(it) } ?: "—"
 
     LaunchedEffect(attempt) {
@@ -155,6 +157,7 @@ internal fun AssignScreen(store: Store, deposit: Receipts.Item, now: Long, onBac
                 is Receipts.Assign.Refused -> { error = r.message; phase = AssignPhase.Picking }
                 Receipts.Assign.NeedKey -> store.revokeManageKey()
                 is Receipts.Assign.Unknown -> phase = AssignPhase.Unknown(r.message)
+                Receipts.Assign.AlreadyDecided -> { settled = true; chosen = null; phase = AssignPhase.Picking; items = null; attempt++ }
             }
         }
     }
@@ -194,6 +197,7 @@ internal fun AssignScreen(store: Store, deposit: Receipts.Item, now: Long, onBac
     }
 
     Hero("واریز $depositAmount", listOfNotNull(deposit.sender?.let { "از " + Persian.sender(it) }, Persian.day(deposit.at, now) + " " + Persian.clock(deposit.at)).joinToString(" · ") + " — رسیدی را که این واریز متعلق به آن است انتخاب کنید.", Tone.info, icon = Ico.Bank)
+    if (settled) Notice("در ربات زودتر تعیین‌تکلیف شد", "این واریز یا آن رسید پیش‌تر در ربات (یا گوشی دیگری) تصمیم گرفته شده بود؛ فهرست از ربات تازه شد.", Tone.info)
     error?.let { ErrorState(it) { attempt++ } }
     val list = items
     when {

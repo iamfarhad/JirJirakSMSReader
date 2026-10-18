@@ -46,6 +46,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import ir.jirjirak.sms.Alerts
 import ir.jirjirak.sms.Money
 import ir.jirjirak.sms.Receipts
 import ir.jirjirak.sms.Store
@@ -61,7 +65,7 @@ private val FILTERS = listOf("all" to "همه", "pending" to "نیازمند ب�
  * figures, the score and the decision are the bot's.
  */
 @Composable
-fun ReceiptsTab(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit) {
+fun ReceiptsTab(store: Store, now: Long, filter: Int, resumed: Int = 0, onFilter: (Int) -> Unit) {
     watchStore()
     if (store.manageKey == null) {
         SideEffect { ReceiptsInner.value = false }
@@ -85,6 +89,10 @@ fun ReceiptsTab(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit) {
     // Told after composition, never during it: App reads this to decide whether to draw the header.
     SideEffect { ReceiptsInner.value = route != Route.List }
     DisposableEffect(Unit) { onDispose { ReceiptsInner.value = false } }
+
+    // A receipt decided in the bot must leave this tab too: read again on every return to the app and,
+    // while the tab is on screen, every [States.pollMs].
+    val fresh = freshness(resumed)
 
     // A screen opens at its top; the list comes back where it was left.
     val scroll = LocalScroll.current
@@ -112,10 +120,10 @@ fun ReceiptsTab(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit) {
                 }
                 is Route.Receipt -> {
                     BackHandler { open = null }
-                    ReceiptDetailScreen(store, r.id, now, onBack = { open = null }, onDecided = { refreshTick++ })
+                    ReceiptDetailScreen(store, r.id, now, fresh, onBack = { open = null }, onDecided = { refreshTick++ })
                 }
                 Route.List -> ReceiptsCentre(
-                    store, now, filter, onFilter, refreshTick, flash,
+                    store, now, filter, onFilter, refreshTick, fresh, flash,
                     onOpen = { open = it },
                     onAssign = { assigning = it },
                     onTeach = { teaching = it },
@@ -124,6 +132,32 @@ fun ReceiptsTab(store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit) {
             }
         }
     }
+}
+
+/**
+ * A number that goes up when what is on screen should be read from the bot again: each return to
+ * the app (MainActivity's resume count), and every [States.pollMs] while the app is in front. The
+ * timer lives only while the caller is composed and the activity is resumed — a tab not shown, or
+ * the app in the background, asks nothing.
+ */
+@Composable
+internal fun freshness(resumed: Int, everyMs: Long = States.pollMs): Int {
+    var tick by remember { mutableIntStateOf(0) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle, everyMs) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                kotlinx.coroutines.delay(everyMs)
+                tick++
+            }
+        }
+    }
+    // The first composition already loads; only a LATER resume is a reason to read again.
+    var lastResume by remember { mutableIntStateOf(resumed) }
+    LaunchedEffect(resumed) {
+        if (resumed != lastResume) { lastResume = resumed; tick++ }
+    }
+    return tick
 }
 
 /** Where the receipts tab is: the list, one receipt, tying a deposit, teaching an SMS. */
@@ -138,7 +172,7 @@ private sealed interface Route {
 
 @Composable
 private fun ReceiptsCentre(
-    store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit, refreshTick: Int, flash: String?,
+    store: Store, now: Long, filter: Int, onFilter: (Int) -> Unit, refreshTick: Int, fresh: Int, flash: String?,
     onOpen: (Long) -> Unit, onAssign: (Receipts.Item) -> Unit, onTeach: (Receipts.Item) -> Unit, onChanged: (String?) -> Unit,
 ) {
     val context = LocalContext.current
@@ -151,6 +185,13 @@ private fun ReceiptsCentre(
     var error by remember(filter, refreshTick) { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
+    /** A complete «نیازمند بررسی» list is the bot's pending count: the notification follows it. */
+    suspend fun told(list: List<Receipts.Item>, hasMore: Boolean) {
+        States.pendingFromList(FILTERS[filter].first, list, hasMore)?.let { n ->
+            withContext(Dispatchers.IO) { Alerts.seen(context.applicationContext, n, null) }
+        }
+    }
+
     fun load(next: Int) {
         loading = true
         if (next == 1) error = null
@@ -161,6 +202,7 @@ private fun ReceiptsCentre(
                     more = r.value.hasMore
                     page = next
                     error = null
+                    told(items!!, more)
                 }
                 Receipts.Result.NeedKey -> store.revokeManageKey()
                 is Receipts.Result.Failed -> error = r.message
@@ -169,9 +211,50 @@ private fun ReceiptsCentre(
             loading = false
         }
     }
+
+    /**
+     * The same pages read again without a skeleton: the list stays as it is until the new one is
+     * whole, and a failed read leaves it untouched (the next resume or tick tries again).
+     */
+    suspend fun reread() {
+        if (loading || items == null) return
+        loading = true
+        try {
+            val read = ArrayList<Receipts.Item>()
+            var hasMore = false
+            for (n in 1..page) {
+                val r = withContext(Dispatchers.IO) { Receipts.history(context.applicationContext, FILTERS[filter].first, n) }
+                when (r) {
+                    is Receipts.Result.Ok -> { read += r.value.items; hasMore = r.value.hasMore }
+                    Receipts.Result.NeedKey -> { store.revokeManageKey(); return }
+                    else -> return
+                }
+                if (!hasMore) break
+            }
+            items = read.distinctBy { it.isDeposit to it.id }
+            more = hasMore
+            told(items!!, more)
+        } finally {
+            loading = false
+        }
+    }
+
+    suspend fun readWeek() {
+        (withContext(Dispatchers.IO) { Receipts.summary(context.applicationContext, "7d") } as? Receipts.Result.Ok)?.let {
+            week = it.value
+            // `needs_review` and `open` are the bot's counts NOW, whatever the range.
+            withContext(Dispatchers.IO) { Alerts.seen(context.applicationContext, it.value.metrics.needsReview, it.value.openMismatch) }
+        }
+    }
     LaunchedEffect(filter, refreshTick) { load(1) }
-    LaunchedEffect(refreshTick) {
-        (withContext(Dispatchers.IO) { Receipts.summary(context.applicationContext, "7d") } as? Receipts.Result.Ok)?.let { week = it.value }
+    LaunchedEffect(refreshTick) { readWeek() }
+    // The list (re)entering the screen loads above; only a tick that comes while it is shown re-reads.
+    var lastFresh by remember { mutableIntStateOf(fresh) }
+    LaunchedEffect(fresh) {
+        if (fresh == lastFresh) return@LaunchedEffect
+        lastFresh = fresh
+        readWeek()
+        reread()
     }
 
     // The week in figures — a skeleton while unknown, never a zero.
@@ -285,7 +368,7 @@ private sealed interface Phase {
 }
 
 @Composable
-private fun ReceiptDetailScreen(store: Store, id: Long, now: Long, onBack: () -> Unit, onDecided: () -> Unit) {
+private fun ReceiptDetailScreen(store: Store, id: Long, now: Long, fresh: Int, onBack: () -> Unit, onDecided: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var detail by remember(id) { mutableStateOf<Receipts.Detail?>(null) }
@@ -295,6 +378,8 @@ private fun ReceiptDetailScreen(store: Store, id: Long, now: Long, onBack: () ->
     // What a fresh read said after an unclear answer: the decision did not go through.
     var stillPending by remember(id) { mutableStateOf(false) }
     var decided by remember(id) { mutableStateOf(false) }
+    // Read again while open, and the receipt was decided in the bot meanwhile (not from here).
+    var decidedInBot by remember(id) { mutableStateOf(false) }
     var image by remember(id) { mutableStateOf<Bitmap?>(null) }
     var showImage by remember(id) { mutableStateOf(false) }
     var imageFailed by remember(id) { mutableStateOf(false) }
@@ -308,6 +393,19 @@ private fun ReceiptDetailScreen(store: Store, id: Long, now: Long, onBack: () ->
             Receipts.Result.NeedKey -> { store.revokeManageKey(); null }
             is Receipts.Result.Failed -> { error = r.message; null }
             Receipts.Result.AlreadyDecided -> null
+        }
+    }
+    LaunchedEffect(id, fresh) {
+        if (detail == null) return@LaunchedEffect
+        // Mid-decision the screen is waiting for its own answer; it reads the receipt itself after.
+        val deciding = phase is Phase.Saving || phase is Phase.Confirming || phase is Phase.Unknown
+        if (deciding) return@LaunchedEffect
+        val before = detail?.item?.state
+        val after = reload() ?: return@LaunchedEffect
+        if (States.decidedElsewhere(before, after.item.state, deciding)) {
+            decidedInBot = true
+            // A confirmation left open would approve a receipt that is no longer waiting.
+            phase = Phase.Idle
         }
     }
     LaunchedEffect(id) {
@@ -351,7 +449,8 @@ private fun ReceiptDetailScreen(store: Store, id: Long, now: Long, onBack: () ->
             }
             when (result) {
                 Receipts.Decision.Done -> settle(approve, if (approve) "رسید $amount از اپ تأیید شد" else "رسید $amount از اپ رد شد: " + reason!!.label)
-                Receipts.Decision.AlreadyDecided -> { phase = Phase.Already; reload(); onDecided() }
+                // 409: decided first in the bot (or on another phone) — read it, say so, no error.
+                Receipts.Decision.AlreadyDecided -> { reload(); phase = Phase.Already; onDecided() }
                 Receipts.Decision.NeedKey -> store.revokeManageKey()
                 is Receipts.Decision.Unknown -> phase = Phase.Unknown(result.message, approve)
                 is Receipts.Decision.Failed -> { error = result.message; phase = Phase.Idle }
@@ -394,8 +493,9 @@ private fun ReceiptDetailScreen(store: Store, id: Long, now: Long, onBack: () ->
             SecondaryButton("بازگشت به فهرست", onBack)
             return
         }
-        Phase.Already -> Hero("این رسید قبلاً تعیین‌تکلیف شده", "کس دیگری یا خود ربات زودتر تصمیم گرفت؛ وضعیت تازه از ربات خوانده شد: " + label + ".", Tone.info, icon = Ico.Receipt)
+        Phase.Already -> Hero("این رسید قبلاً تعیین‌تکلیف شده", "در ربات (یا گوشی دیگری) زودتر تصمیم گرفته شد؛ وضعیت تازه از ربات خوانده شد: " + label + ".", Tone.info, icon = Ico.Receipt)
         else -> when {
+            decidedInBot -> Hero("در ربات تعیین‌تکلیف شد", "تا این صفحه باز بود، این رسید در ربات " + label + " شد؛ کاری از این‌جا لازم نیست.", Tone.info, icon = Ico.Receipt)
             decided && r.state == "approved" -> Hero("پرداخت تأیید شد", "نتیجه از ربات دریافت شد؛ سفارش «" + (r.customer ?: "مشتری") + "» تأییدشده است.", Tone.good, Art.Success)
             r.state == "rejected" -> Hero("رسید رد شده است", "نتیجهٔ قطعی از ربات دریافت شد.", Tone.bad, icon = Ico.Receipt)
             r.state == "approved" -> Hero(amount, label + (r.reason?.let { " — " + Persian.digits(it) } ?: ""), Tone.good, icon = Ico.Check)

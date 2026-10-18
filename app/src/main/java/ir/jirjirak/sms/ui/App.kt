@@ -170,7 +170,7 @@ fun App(resumed: Int, wantedTab: Int, wantedFilter: Int = 0, tabRequest: Int = 0
                 when {
                     !paired -> PairScreen(store)
                     nav.tab == MainActivity.TAB_REPORT -> ReportTab(store, now)
-                    nav.tab == MainActivity.TAB_RECEIPTS -> ReceiptsTab(store, now, nav.receiptsFilter) { nav.setReceiptsFilter(it) }
+                    nav.tab == MainActivity.TAB_RECEIPTS -> ReceiptsTab(store, now, nav.receiptsFilter, resumed) { nav.setReceiptsFilter(it) }
                     nav.tab == MainActivity.TAB_MORE -> MoreTab(store, now, nav.more)
                     else -> HomeTab(store, now, resumed, nav.home)
                 }

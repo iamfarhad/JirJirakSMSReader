@@ -67,11 +67,28 @@ object Alerts {
         val store = Store(context)
         if (store.manageKey == null || !store.supports("insights")) return
         val summary = (Receipts.summary(context, "today") as? Receipts.Result.Ok)?.value ?: return
+        counts(context, summary.metrics.needsReview, summary.openMismatch, now, fromApp = false)
+    }
+
+    /**
+     * Counts the app just read from the bot (the receipts list, a summary): the notifications follow
+     * at once — one receipt decided in the bot, the «N رسید منتظر» notice says N−1 or goes. The app
+     * only ever lowers them ([tellFromApp]); a rise is the background check's to announce.
+     * [mismatch] null: not known from this read. Writes prefs and posts: call off the main thread.
+     */
+    fun seen(context: Context, pending: Int?, mismatch: Int?, now: Long = System.currentTimeMillis()) {
+        val store = Store(context)
+        if (store.manageKey == null || !store.supports("insights")) return
+        counts(context, pending, mismatch, now, fromApp = true)
+    }
+
+    private fun counts(context: Context, pending: Int?, mismatch: Int?, now: Long, fromApp: Boolean) {
+        val store = Store(context)
         val hour = java.util.Calendar.getInstance().apply { timeInMillis = now }.get(java.util.Calendar.HOUR_OF_DAY)
         val manager = context.getSystemService(NotificationManager::class.java)
+        val decide = if (fromApp) ::tellFromApp else ::tell
 
-        val pending = summary.metrics.needsReview
-        tell(pending, store.toldPending, store.notifyReview, store.quietNights, hour).let { t ->
+        if (pending != null) decide(pending, store.toldPending, store.notifyReview, store.quietNights, hour).let { t ->
             if (t.notify || t.refresh) {
                 notify(context, CHANNEL_REVIEW, "رسیدها و مغایرت‌ها", ID_REVIEW,
                     "🧾 " + ir.jirjirak.sms.ui.Persian.number(pending) + " رسید منتظر بررسی",
@@ -83,8 +100,7 @@ object Alerts {
         }
 
         // The same count the «مغایرت» list shows, so a notification never promises more than is there.
-        val mismatch = summary.openMismatch
-        tell(mismatch, store.toldMismatch, store.notifyMismatch, store.quietNights, hour).let { t ->
+        if (mismatch != null) decide(mismatch, store.toldMismatch, store.notifyMismatch, store.quietNights, hour).let { t ->
             if (t.notify || t.refresh) {
                 notify(context, CHANNEL_REVIEW, "رسیدها و مغایرت‌ها", ID_MISMATCH,
                     "⚠️ " + ir.jirjirak.sms.ui.Persian.number(mismatch) + " مغایرت تازه",
@@ -95,6 +111,14 @@ object Alerts {
             if (t.told != store.toldMismatch) store.toldMismatch = t.told
         }
     }
+
+    /**
+     * The same, for a count read while the seller has the app open: a lower count is said at once
+     * (refreshed or withdrawn), a higher one is left for the background check — told stays put, so
+     * that check still announces it. Pure: unit-tested.
+     */
+    fun tellFromApp(count: Int, told: Int, enabled: Boolean, quietNights: Boolean, hour: Int): Tell =
+        if (count > told) Tell(notify = false, told = told, cancel = false) else tell(count, told, enabled, quietNights, hour)
 
     /** «۱۷۵٬۰۱۳ تومان — سفارش سارا». Pure: unit-tested. */
     fun approvedText(amount: Long, customer: String?): String =

@@ -92,6 +92,22 @@ object States {
         else -> QueueRow.QUEUED
     }
 
+    // ── following the bot: a receipt decided there leaves the app too ───
+
+    /** How often an open receipts list or receipt is read again while on screen (a device test shortens it). */
+    @Volatile var pollMs = 25_000L
+
+    /**
+     * The receipts waiting, as one read of a list says it — only when that list is the «نیازمند بررسی»
+     * one and complete (no further page); anything else says nothing about the count. Pure.
+     */
+    fun pendingFromList(filter: String, items: List<ir.jirjirak.sms.Receipts.Item>, hasMore: Boolean): Int? =
+        if (filter != "pending" || hasMore) null else items.count { !it.isDeposit && it.state == "pending" }
+
+    /** A receipt that was waiting and now is not, while this phone was not deciding it: decided elsewhere. Pure. */
+    fun decidedElsewhere(before: String?, after: String, deciding: Boolean): Boolean =
+        before == "pending" && after != "pending" && !deciding
+
     // ── the unpair warning (49) ──────────────────────────────────────────
 
     fun unpairText(queued: Int): String =

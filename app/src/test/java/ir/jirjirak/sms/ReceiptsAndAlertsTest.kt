@@ -130,4 +130,41 @@ class ReceiptsAndAlertsTest {
     fun `a widget that never heard from the bot does not say it is online`() {
         assertEquals("📵 ارتباط قطع است", StatusWidget.lines(true, 1, 0, 0, 0, 1_800_000_000_000L).first)
     }
+
+    // ── following the bot: decided there, gone here ─────────────────────
+
+    @Test
+    fun `a count read in the app only ever lowers the review notice`() {
+        assertEquals("one decided in the bot: the notice says the new number at once",
+            Alerts.Tell(false, 2, false, refresh = true), Alerts.tellFromApp(2, 3, true, false, 12))
+        assertEquals("all decided in the bot: withdrawn", Alerts.Tell(false, 0, true), Alerts.tellFromApp(0, 3, true, false, 12))
+        assertEquals("a new one is the background check's to announce: told stays put",
+            Alerts.Tell(false, 1, false), Alerts.tellFromApp(4, 1, true, false, 12))
+        assertFalse("never a sound from a list being read", Alerts.tellFromApp(5, 0, true, false, 12).notify)
+        assertEquals("nothing told, nothing waiting: nothing to do", Alerts.Tell(false, 0, false), Alerts.tellFromApp(0, 0, true, false, 12))
+    }
+
+    private val page = Receipts.parsePage("""{"has_more":false,"items":[
+        {"id":9,"state":"pending","amount":120000,"created_at":1792058814},
+        {"id":10,"state":"approved","via":"auto","amount":5000,"created_at":1792058000},
+        {"id":11,"kind":"deposit","state":"unmatched","amount":7000,"created_at":1792058000}
+    ]}""")
+
+    @Test
+    fun `only a complete pending list is a pending count`() {
+        assertEquals(1, ir.jirjirak.sms.ui.States.pendingFromList("pending", page.items, hasMore = false))
+        assertEquals("an empty pending list is zero, not unknown", 0, ir.jirjirak.sms.ui.States.pendingFromList("pending", emptyList(), false))
+        assertNull("a further page may hold more", ir.jirjirak.sms.ui.States.pendingFromList("pending", page.items, hasMore = true))
+        assertNull("«همه» says nothing about the count", ir.jirjirak.sms.ui.States.pendingFromList("all", page.items, false))
+    }
+
+    @Test
+    fun `a receipt that stopped waiting while this phone was not deciding was decided in the bot`() {
+        assertTrue(ir.jirjirak.sms.ui.States.decidedElsewhere("pending", "approved", deciding = false))
+        assertTrue(ir.jirjirak.sms.ui.States.decidedElsewhere("pending", "rejected", deciding = false))
+        assertFalse("this phone's own decision", ir.jirjirak.sms.ui.States.decidedElsewhere("pending", "approved", deciding = true))
+        assertFalse("still waiting", ir.jirjirak.sms.ui.States.decidedElsewhere("pending", "pending", false))
+        assertFalse("already decided when opened", ir.jirjirak.sms.ui.States.decidedElsewhere("approved", "approved", false))
+        assertFalse("first read", ir.jirjirak.sms.ui.States.decidedElsewhere(null, "approved", false))
+    }
 }

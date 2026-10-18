@@ -83,6 +83,7 @@ class RedesignFlowsTest {
     }
 
     @After fun tearDown() {
+        ir.jirjirak.sms.ui.States.pollMs = 25_000L
         bot.close()
         store.unpair()
         store.clearEvents()
@@ -278,6 +279,59 @@ class RedesignFlowsTest {
         val asked = info.requestedPermissions.orEmpty().toList()
         assertTrue(Manifest.permission.RECEIVE_SMS in asked)
         assertFalse("READ_SMS is gone: nothing reads the inbox", Manifest.permission.READ_SMS in asked)
+    }
+
+    // ── decided in the bot: the app follows ──────────────────────────────
+
+    private val resumed = androidx.compose.runtime.mutableIntStateOf(0)
+
+    /** A bot that answers «pending» lists honestly: once [receiptState] is decided, receipt 7 is not in them. */
+    private fun botFollowsState() {
+        val base = bot.handler
+        bot.handler = { m, p, b ->
+            when {
+                p.startsWith("/receipts/history") && p.contains("filter=pending") ->
+                    if (receiptState == "pending") FakeBot.history(FakeBot.receipt(7, receiptState)) else FakeBot.history()
+                p.startsWith("/receipts/summary") -> FakeBot.summary(needsReview = if (receiptState == "pending") 1 else 0)
+                else -> base(m, p, b)
+            }
+        }
+    }
+
+    @Test fun decidedInTheBot_leavesThePendingListOnResume_andTheNoticeGoes() {
+        paired()
+        botFollowsState()
+        store.toldPending = 1
+        rule.setContent { JirjirakTheme { App(resumed.intValue, MainActivity.TAB_RECEIPTS, 1, 0) } }
+        waitFor("مشتری آزمون")
+        // Approved in Telegram meanwhile; the seller comes back to the app.
+        receiptState = "approved"
+        rule.runOnIdle { resumed.intValue++ }
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("مشتری آزمون").fetchSemanticsNodes().isEmpty() }
+        waitFor("رسیدی منتظر بررسی نیست")
+        // The «۱ رسید منتظر» notification follows the bot's count at once.
+        rule.waitUntil(5_000) { store.toldPending == 0 }
+    }
+
+    @Test fun decidedInTheBot_whileTheReceiptIsOpen_thePollHidesTheButtons() {
+        ir.jirjirak.sms.ui.States.pollMs = 1_000L
+        paired()
+        openReceipt()
+        rule.onNodeWithText("تأیید پرداخت").performScrollTo().assertIsDisplayed()
+        receiptState = "approved"
+        waitFor("در ربات تعیین‌تکلیف شد")
+        assertTrue("no approve on a receipt the bot already decided", rule.onAllNodesWithText("تأیید پرداخت").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithText("این رسید دیگر منتظر تصمیم نیست", substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun decidedInTheBot_theOpenListIsReadAgainByThePoll() {
+        ir.jirjirak.sms.ui.States.pollMs = 1_000L
+        paired()
+        botFollowsState()
+        rule.setContent { JirjirakTheme { App(0, MainActivity.TAB_RECEIPTS, 1, 0) } }
+        waitFor("مشتری آزمون")
+        receiptState = "rejected"
+        waitFor("رسیدی منتظر بررسی نیست")
     }
 
     // ── unpair, health ──────────────────────────────────────────────────

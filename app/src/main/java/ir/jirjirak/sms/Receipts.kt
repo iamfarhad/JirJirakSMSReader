@@ -330,6 +330,8 @@ object Receipts {
         data object NeedKey : Assign
         /** No clear reply: the bot may have tied it. Read the deposit again before anything else. */
         data class Unknown(val message: String) : Assign
+        /** 409: the deposit or the receipt was settled already — in the bot, or on another phone. */
+        data object AlreadyDecided : Assign
     }
 
     /** What an assign reply means. Pure: unit-tested. */
@@ -338,6 +340,7 @@ object Receipts {
         return when {
             code in 200..299 -> Assign.Done
             code == 401 -> Assign.NeedKey
+            code == 409 -> Assign.AlreadyDecided
             code == 0 || code >= 500 -> Assign.Unknown(if (code == 0) text.ifBlank { "پاسخ ربات نرسید" } else "ربات خطا داد (" + ir.jirjirak.sms.ui.Persian.number(code) + ")")
             code == 422 && j?.optString("error") == "amount_differs" -> Assign.AmountDiffers(j.optLong("deposit_amount"), j.optLong("expected"))
             else -> Assign.Refused(

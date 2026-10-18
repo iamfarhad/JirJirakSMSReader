@@ -151,8 +151,9 @@ class FingerprintAndHealthTest {
             Receipts.Assign.AmountDiffers(89000, 90000),
             Receipts.assignOutcome(422, """{"ok":false,"error":"amount_differs","deposit_amount":89000,"expected":90000,"message":"مبلغ…"}"""),
         )
+        // Settled first in the bot or on another phone: not an error, the screen reads the bot again.
         assertEquals(
-            Receipts.Assign.Refused("این واریز دیگر آزاد نیست؛ صفحه را تازه کنید."),
+            Receipts.Assign.AlreadyDecided,
             Receipts.assignOutcome(409, """{"ok":false,"error":"deposit_taken","message":"این واریز دیگر آزاد نیست؛ صفحه را تازه کنید."}"""),
         )
         // A server fault after the request went out may still have tied it: unknown, read it again.
