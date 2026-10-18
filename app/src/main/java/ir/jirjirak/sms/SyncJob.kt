@@ -19,8 +19,7 @@ class SyncJob : JobService() {
             // Each step on its own: one throwing must not skip jobFinished and leave the job hanging.
             runCatching { Net.flush(this) }
             runCatching { Net.ping(this) }
-            // What arrived while the app could not hear it, then the counts the seller asked to hear of.
-            runCatching { Recovery.scan(this) }
+            // The counts the seller asked to hear of.
             runCatching { Alerts.checkReview(this) }
             // The retry job asks to be run again (with its backoff) while anything is still queued;
             // `false` here made the backoff dead config and a failed retry the last one.

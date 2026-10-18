@@ -72,7 +72,6 @@ class HooksFlowTest {
         store.unpair()
         store.clearEvents()
         store.senders = emptyList()
-        store.recoveryOn = false
     }
 
     private fun paired() {
@@ -141,7 +140,7 @@ class HooksFlowTest {
         store.hooksOn = true
         hook("9999")
         assertTrue(Forward.accept(store, "9999", deposit, stamp))
-        assertFalse("the same SMS again (receiver and recovery racing)", Forward.accept(store, "9999", deposit, stamp))
+        assertFalse("the same SMS again (the broadcast delivered twice)", Forward.accept(store, "9999", deposit, stamp))
         Net.flush(context)
         assertEquals(1, bot.requests.count { it.path.isEmpty() })
         assertEquals(1, hookServer.requests.size)

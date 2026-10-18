@@ -99,7 +99,7 @@ enum class Ico(@param:DrawableRes val res: Int, val mirrored: Boolean = false) {
     External(R.drawable.jrs_ic_external), Eye(R.drawable.jrs_ic_eye), Filter(R.drawable.jrs_ic_filter),
     Home(R.drawable.jrs_ic_home), Image(R.drawable.jrs_ic_image), Inbox(R.drawable.jrs_ic_inbox),
     Info(R.drawable.jrs_ic_info), Layers(R.drawable.jrs_ic_layers), Lock(R.drawable.jrs_ic_lock),
-    Mail(R.drawable.jrs_ic_mail), More(R.drawable.jrs_ic_more), Phone(R.drawable.jrs_ic_phone),
+    Mail(R.drawable.jrs_ic_mail), More(R.drawable.jrs_ic_more), Phone(R.drawable.jrs_ic_phone), Plus(R.drawable.jrs_ic_plus),
     Receipt(R.drawable.jrs_ic_receipt), Refresh(R.drawable.jrs_ic_refresh), Search(R.drawable.jrs_ic_search),
     Settings(R.drawable.jrs_ic_settings), Shield(R.drawable.jrs_ic_shield), Sparkles(R.drawable.jrs_ic_sparkles),
     Sun(R.drawable.jrs_ic_sun), Sync(R.drawable.jrs_ic_sync), User(R.drawable.jrs_ic_user), Wifi(R.drawable.jrs_ic_wifi),

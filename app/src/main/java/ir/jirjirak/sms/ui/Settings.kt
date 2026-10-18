@@ -1,8 +1,5 @@
 package ir.jirjirak.sms.ui
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import ir.jirjirak.sms.Receipts
-import ir.jirjirak.sms.Recovery
 import ir.jirjirak.sms.Store
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,88 +51,6 @@ fun SettingSwitch(title: String, subtitle: String?, checked: Boolean, enabled: B
             ),
         )
     }
-}
-
-// ── recovery (44, 56, 90–92) ────────────────────────────────────────────
-
-/**
- * «بازیابی پیامک‌های جامانده»: turning it on asks for READ_SMS (Android shows its own dialog) and
- * sets the starting point — nothing from before this moment is ever sent. What it finds is QUEUED;
- * whether the bot took it is the report's to say.
- */
-@Composable
-internal fun RecoveryScreen(store: Store, now: Long) {
-    watchStore()
-    val context = LocalContext.current
-    val nav = LocalNav.current
-    val scope = rememberCoroutineScope()
-    var scanning by remember { mutableStateOf(false) }
-    var found by remember { mutableStateOf<Int?>(null) }
-    var denied by remember { mutableStateOf(false) }
-    val permitted = Recovery.permitted(context)
-
-    fun enable() {
-        store.recoveryOn = true
-        // From now, every time: SMS from while it was off are not «" + Persian.latin("missed") + "», they were declined.
-        store.recoveryFrom = System.currentTimeMillis()
-        store.event("system", "info", "بازیابی پیامک‌های جامانده روشن شد")
-        denied = false
-    }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) enable() else denied = true
-        Store.revision.intValue++
-    }
-
-    ScreenHeader("بازیابی پیامک‌ها", "بیشتر") { nav.more() }
-    val on = store.recoveryOn && permitted
-    when {
-        scanning -> Hero("در حال جست‌وجوی صندوق", "فقط بازهٔ مجاز بعد از روشن‌کردن بازیابی بررسی می‌شود.", Tone.info, Art.Queue)
-        found != null && found!! > 0 -> Hero(Persian.number(found!!) + " پیامک به صف اضافه شد", "پیدا شدن و صف شدن، به معنی ارسال موفق نیست.", Tone.info, Art.Queue)
-        found == 0 -> Hero("پیامک جامانده‌ای نبود", "در بازهٔ مجاز، پیامک تازه‌ای برای افزودن به صف پیدا نشد.", Tone.good, Art.SetupComplete)
-        denied || (store.recoveryOn && !permitted) -> Hero("بازیابی روشن نشد", "برای جست‌وجوی صندوق پیامک، اجازهٔ خواندن پیامک لازم است.", Tone.warn, Art.Permissions)
-        else -> Hero("بازیابی پیامک‌های جامانده", "برای وقت‌هایی که گوشی خاموش یا برنامه بسته بوده است.", Tone.info, Art.Queue)
-    }
-    if (scanning) Waiting("جست‌وجو در صندوق پیامک…")
-    AppCard(title = "بازیابی خودکار") {
-        SettingSwitch(
-            "پیدا کردن پیامک‌های جامانده",
-            "فقط از زمان روشن‌کردن این گزینه؛ حداکثر دو روز، فقط فرستنده‌های مجاز و بدون پیامک‌هایی که شبیه رمز باشند.",
-            checked = on, enabled = !scanning,
-        ) { want ->
-            found = null
-            when {
-                !want -> { store.recoveryOn = false; store.event("system", "info", "بازیابی پیامک‌های جامانده خاموش شد") }
-                permitted -> enable()
-                else -> ask.launch(Manifest.permission.READ_SMS)
-            }
-        }
-        if (denied || (store.recoveryOn && !permitted)) {
-            Notice("اجازهٔ خواندن صندوق پیامک داده نشده است.", "اگر اندروید دوباره نپرسید: تنظیمات ← برنامه‌ها ← جیرجیرک پیامک ← اجازه‌ها ← پیامک.", Tone.warn)
-            PrimaryButton("اجازهٔ خواندن پیامک", { ask.launch(Manifest.permission.READ_SMS) })
-            SecondaryButton("باز کردن تنظیمات برنامه", { openAppSettings(context) })
-        }
-        if (on) {
-            Divider()
-            ListRow(Ico.Clock, Tone.muted, "آخرین جست‌وجو", Persian.ago(store.lastRecovery, now) + " · از " + Persian.date(store.recoveryFrom) + " " + Persian.clock(store.recoveryFrom))
-            SecondaryButton(if (scanning) "در حال جست‌وجو" else "همین حالا جست‌وجو کن", {
-                scanning = true
-                found = null
-                scope.launch {
-                    found = withContext(Dispatchers.IO) { Recovery.scan(context.applicationContext, force = true) }
-                    scanning = false
-                }
-            }, busy = scanning, icon = Ico.Search)
-        }
-    }
-    found?.let { n ->
-        Notice(States.recoveryResult(n), null, if (n > 0) Tone.info else Tone.good)
-        if (n > 0) PrimaryButton("مشاهدهٔ صف ارسال", { nav.home("queue") })
-    }
-    Notice(
-        "این قابلیت اختیاری است",
-        "پیامک‌های قبل از روشن‌کردن بازیابی پیدا نمی‌شوند. پیامک شخصی، فرستندهٔ نامجاز و پیامک رمز ارسال نمی‌شود و صندوق پیامک شما تغییری نمی‌کند.",
-        Tone.info,
-    )
 }
 
 // ── notifications (45) ──────────────────────────────────────────────────

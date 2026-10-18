@@ -98,8 +98,7 @@ class Store(context: Context) {
             prefs.edit().remove("endpoint").remove("shop").remove("shop_info").remove("queue")
                 .remove("last_error").remove("latest_from_bot").remove("manage_key").remove("manage_key_revoked")
                 .remove("battery_warned").remove("offline_warned")
-                // Recovery starts over with the next shop: SMS from while this phone was nobody's
-                // must not be sent to whoever it is paired with next.
+                // Left by the inbox recovery of 1.4.1 and before, which is gone (no READ_SMS).
                 .remove("recovery_on").remove("recovery_from").remove("last_recovery")
                 .remove("told_pending").remove("told_mismatch"),
         )
@@ -257,25 +256,6 @@ class Store(context: Context) {
                 prefs.edit().putString("device_id", it).commit()
             }
         }
-
-    // ── recovery: SMS that arrived while the app could not hear them ────
-
-    /** «بازیابی پیامک‌های جامانده» — off until the seller turns it on (it needs READ_SMS). */
-    var recoveryOn: Boolean
-        get() = prefs.getBoolean("recovery_on", false)
-        set(v) = commit(prefs.edit().putBoolean("recovery_on", v))
-
-    /**
-     * Nothing older than this is ever recovered: the moment recovery was turned on. SMS before it were
-     * the old app's business, and resending them could make yesterday's deposit look like today's.
-     */
-    var recoveryFrom: Long
-        get() = prefs.getLong("recovery_from", 0)
-        set(v) = commit(prefs.edit().putLong("recovery_from", v))
-
-    var lastRecovery: Long
-        get() = prefs.getLong("last_recovery", 0)
-        set(v) = commit(prefs.edit().putLong("last_recovery", v))
 
     // ── notifications the seller chose ──────────────────────────────────
 

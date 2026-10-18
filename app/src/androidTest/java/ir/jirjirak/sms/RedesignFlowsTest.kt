@@ -65,7 +65,6 @@ class RedesignFlowsTest {
         store.clearEvents()
         store.senders = emptyList()
         store.theme = "light"
-        store.recoveryOn = false
         // No update check from a test: it would reach GitHub.
         store.lastUpdateCheck = System.currentTimeMillis()
         SummaryCache.clear()
@@ -235,6 +234,50 @@ class RedesignFlowsTest {
         rule.onAllNodesWithText("تأیید پرداخت").let { it[it.fetchSemanticsNodes().size - 1] }.performClick()
         waitFor("این رسید قبلاً تعیین‌تکلیف شده")
         rule.onNodeWithText("این رسید دیگر منتظر تصمیم نیست", substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    // ── the bank's number: typed by hand, the inbox never read ──────────
+
+    @Test fun senders_manualAdd_isTheOnlyWayAndNeedsAConfirmation() {
+        paired()
+        store.senders = emptyList()
+        launch()
+        tap("افزودن شمارهٔ بانک")
+        waitFor("هنوز شمارهٔ بانکی ندارید")
+        // No inbox picker on the list: typing the number is the only way in.
+        assertTrue(rule.onAllNodesWithText("انتخاب از پیامک‌ها", substring = true).fetchSemanticsNodes().isEmpty())
+        assertTrue(rule.onAllNodesWithText("پیدا کردن خودکار", substring = true).fetchSemanticsNodes().isEmpty())
+        tap("افزودن شمارهٔ بانک")
+        waitFor("شماره را از کجا پیدا کنم؟")
+        rule.onNode(hasSetTextAction()).performTextInput("+98200")
+        tap("بررسی فرستنده")
+        waitFor("این فرستنده مجاز شود؟")
+        assertTrue("nothing is added before the confirmation", store.senders.isEmpty())
+        rule.onNodeWithText("بله، مجاز شود").performClick()
+        rule.waitUntil(5_000) { store.senders.isNotEmpty() }
+        assertEquals(listOf("+98200"), store.senders)
+        // Back on the list, with the add button still there for the next number.
+        waitFor("۱ فرستنده مجاز است")
+        rule.onNodeWithText("افزودن شماره").assertIsDisplayed()
+    }
+
+    @Test fun senders_manualAdd_refusesASenderAlreadyAllowed() {
+        paired()
+        launch()
+        tap("فرستندهٔ مجاز")
+        waitFor("شماره‌های مجاز")
+        tap("افزودن شماره")
+        rule.onNode(hasSetTextAction()).performTextInput("۹۹۹۹")
+        tap("بررسی فرستنده")
+        waitFor("این فرستنده از قبل مجاز است.")
+        assertEquals(listOf("9999"), store.senders)
+    }
+
+    @Test fun theAppDoesNotAskForTheInbox() {
+        val info = context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
+        val asked = info.requestedPermissions.orEmpty().toList()
+        assertTrue(Manifest.permission.RECEIVE_SMS in asked)
+        assertFalse("READ_SMS is gone: nothing reads the inbox", Manifest.permission.READ_SMS in asked)
     }
 
     // ── unpair, health ──────────────────────────────────────────────────

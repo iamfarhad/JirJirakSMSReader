@@ -65,7 +65,6 @@ fun HomeTab(store: Store, now: Long, resumed: Int, route: String) {
         "setup_done" -> SetupDoneScreen(store)
         "notify_denied" -> NotifyDeniedScreen()
         "senders" -> SendersScreen(store)
-        "pick" -> PickSenderScreen(store)
         "manual" -> ManualSenderScreen(store)
         "health" -> HealthScreen(store)
         "queue" -> QueueScreen(store, now)
@@ -85,8 +84,6 @@ private fun Dashboard(store: Store, now: Long, resumed: Int) {
     val nav = LocalNav.current
     val scope = rememberCoroutineScope()
     LaunchedEffect(store.manageKey, resumed) { SummaryCache.refresh(context, store) }
-    // Back in the app: anything that arrived while it could not hear is looked for now.
-    LaunchedEffect(resumed) { withContext(Dispatchers.IO) { runCatching { ir.jirjirak.sms.Recovery.scan(context.applicationContext) } } }
 
     val summary = SummaryCache.value.takeIf { store.manageKey != null }
     val sms = smsGranted(context)
@@ -115,8 +112,8 @@ private fun Dashboard(store: Store, now: Long, resumed: Int) {
             }
         }
         States.HomeHero.NO_SENDERS -> {
-            Hero("راه‌اندازی کامل نیست", "هنوز شمارهٔ بانکی مجاز نشده؛ تا انتخاب نشود هیچ پیامکی ارسال نمی‌شود.", Tone.warn, Art.Bank)
-            PrimaryButton("انتخاب فرستندهٔ بانک", { nav.home("senders") })
+            Hero("راه‌اندازی کامل نیست", "هنوز شمارهٔ بانکی مجاز نشده؛ تا اضافه نشود هیچ پیامکی ارسال نمی‌شود.", Tone.warn, Art.Bank)
+            PrimaryButton("افزودن شمارهٔ بانک", { nav.home("senders") }, icon = Ico.Plus)
         }
         States.HomeHero.OFFLINE -> {
             Hero(
@@ -232,10 +229,10 @@ private fun StatsBlock(store: Store, now: Long, onRetry: () -> Unit) {
 private fun ActionsNeeded(store: Store, summary: Receipts.Summary?, now: Long) {
     val nav = LocalNav.current
     data class Item(val icon: Ico, val tone: String, val title: String, val hint: String, val badge: String, val go: () -> Unit)
-    // A queued SMS that could not even be stored (a full disk): recent, and not yet recovered.
+    // A queued SMS that could not even be stored (a full disk): recent, still to be dealt with.
     val storageFail = store.events().firstOrNull { it.optString("kind") == "sms" && it.optString("status") == "failed" && it.optString("title").contains("ذخیره نشد") && now - it.optLong("at") < 48 * 3600_000L }
     val items = buildList {
-        if (storageFail != null) add(Item(Ico.Alert, "bad", "پیامک در صف ذخیره نشد", "حافظهٔ گوشی پر است یا پایگاه‌داده خطا داد.", "بررسی") { nav.more("recovery") })
+        if (storageFail != null) add(Item(Ico.Alert, "bad", "پیامک در صف ذخیره نشد", "حافظهٔ گوشی پر است یا پایگاه‌داده خطا داد.", "بررسی") { nav.home("queue") })
         summary?.actions?.forEach { a ->
             when (a.kind) {
                 "review" -> add(Item(Ico.Receipt, "warn", Persian.digits(a.title), a.hint, "بررسی") { nav.receipts(1) })
@@ -475,9 +472,8 @@ private fun QueueScreen(store: Store, now: Long) {
             AppCard(title = "برای رفع مشکل") {
                 Rows(
                     { ListRow(Ico.Alert, Tone.bad, "فضای آزاد گوشی", "حافظهٔ دستگاه را بررسی کنید.", badge = "کمبود فضا") },
-                    { ListRow(Ico.Refresh, Tone.info, "بازیابی پیامک‌ها", "پیامک هنوز در صندوق گوشی است؛ حذفش نکنید. بازیابی فقط پیامک‌های بعد از روشن‌کردن آن را پیدا می‌کند.", badge = "پیشنهاد") },
+                    { ListRow(Ico.Receipt, Tone.info, "پیامک در صندوق گوشی است", "حذفش نکنید. بعد از آزاد کردن فضا، آن واریز را در خود ربات دستی تأیید کنید.") },
                 )
-                PrimaryButton("رفتن به بازیابی پیامک‌ها", { nav.more("recovery") })
             }
         }
         AppCard(title = "ارسال‌های ناموفق") {

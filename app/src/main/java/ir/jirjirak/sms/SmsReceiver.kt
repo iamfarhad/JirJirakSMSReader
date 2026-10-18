@@ -28,8 +28,8 @@ class SmsReceiver : BroadcastReceiver() {
         val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
         // A long SMS arrives in parts; join them per sender, in order.
         val bySender = linkedMapOf<String, StringBuilder>()
-        // The SMS centre's stamp of each message: the same value the inbox keeps as `date_sent`, which
-        // is how a recovery pass later knows this SMS was already handled (Rules.fingerprint).
+        // The SMS centre's stamp of each message: part of its fingerprint (Rules.fingerprint), so the
+        // same SMS delivered twice is sent once, and two deposits with the same text stay two.
         val sentAt = hashMapOf<String, Long>()
         for (p in parts) {
             val from = p?.displayOriginatingAddress ?: continue
@@ -75,8 +75,7 @@ object Forward {
             return false
         }
         if (Rules.isSecret(body)) {
-            // Not even its fingerprint is kept: a hash of a 6-digit code is a 6-digit code. Recovery
-            // skips passwords on its own (Rules.isSecret), so nothing needs remembering.
+            // Not even its fingerprint is kept: a hash of a 6-digit code is a 6-digit code.
             store.event("ignored", "info", "رمز یکبار مصرف — روی گوشی ماند", "پیامک رمز و کد تأیید هرگز فرستاده نمی‌شود، حتی از شمارهٔ مجاز.", from)
             return false
         }
@@ -88,7 +87,7 @@ object Forward {
     }
 
     /** One row for the bot ([hook] null) or for one webhook, and its line in the event log. */
-    fun queue(store: Store, from: String, body: String, sentAt: Long, seenKey: String, hook: Hook?, recovered: Boolean = false, receivedAt: Long = System.currentTimeMillis()): Boolean {
+    fun queue(store: Store, from: String, body: String, sentAt: Long, seenKey: String, hook: Hook?, receivedAt: Long = System.currentTimeMillis()): Boolean {
         val id = UUID.randomUUID().toString()
         val item = JSONObject()
             .put("id", id)
@@ -97,18 +96,16 @@ object Forward {
             .put("received_at", receivedAt / 1000)
             .put("sent_at", sentAt)
             .put("source", "jirjirak-sms/" + BuildConfig.VERSION_NAME)
-        if (recovered) item.put("recovered", true)
         val fresh = runCatching { store.enqueue(item, seenKey, hook?.id ?: Hooks.BOT) }.getOrElse {
             // A full disk or a broken database: the SMS is still in the phone's inbox, and the log
-            // says why it did not go — recovery picks it up once the database works again.
+            // says why it did not go — the seller frees space and confirms that deposit in the bot.
             store.event(if (hook == null) "sms" else "hook", "failed", "پیامک بانک ذخیره نشد", "حافظهٔ گوشی پر است یا خطای پایگاه‌داده؛ پیامک در صندوق گوشی هست.", from, body)
             return false
         }
-        // A recovery pass got here first (the receiver can be woken late): already on its way.
+        // This very SMS was delivered before (a broadcast repeated): already on its way.
         if (!fresh) return false
         when {
-            hook != null -> store.event("hook", "queued", "وب‌هوک · " + hook.host, if (recovered) "پیامک جامانده؛ در صف ارسال" else "در صف ارسال", from, body, id)
-            recovered -> store.event("sms", "queued", "پیامک جامانده بازیابی شد", "این پیامک وقتی برنامه در دسترس نبود رسیده بود؛ حالا فرستاده می‌شود.", from, body, id)
+            hook != null -> store.event("hook", "queued", "وب‌هوک · " + hook.host, "در صف ارسال", from, body, id)
             else -> store.event("sms", "queued", "پیامک بانک", "در صف ارسال به ربات", from, body, id)
         }
         return true

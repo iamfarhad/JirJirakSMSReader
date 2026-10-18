@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import ir.jirjirak.sms.Autostart
 import ir.jirjirak.sms.Beat
-import ir.jirjirak.sms.Inbox
 import ir.jirjirak.sms.KeepAliveService
 import ir.jirjirak.sms.Net
 import ir.jirjirak.sms.Receipts
@@ -141,7 +140,7 @@ fun PairScreen(store: Store) {
         if (state == States.Pair.CHECKING) {
             SecondaryButton("بازگشت به ورود کد", { job?.cancel(); state = States.Pair.EMPTY })
         } else {
-            Notice("کنترل دست شماست", "بدون انتخاب فرستنده، هیچ پیامکی ارسال نمی‌شود. پیامک رمز و کد تأیید هرگز فرستاده نمی‌شود.", Tone.info)
+            Notice("کنترل دست شماست", "تا شمارهٔ بانک را وارد نکنید، هیچ پیامکی ارسال نمی‌شود. پیامک رمز و کد تأیید هرگز فرستاده نمی‌شود.", Tone.info)
         }
     }
     JirjirakLinks()
@@ -209,7 +208,7 @@ internal fun SetupScreen(store: Store, resumed: Int) {
             {
                 ListRow(
                     Ico.Bank, if (store.senders.isNotEmpty()) Tone.good else Tone.warn, "فرستندهٔ بانک",
-                    if (store.senders.isNotEmpty()) Persian.number(store.senders.size) + " فرستندهٔ مجاز" else "حداقل یک شماره یا شناسه را انتخاب کنید.",
+                    if (store.senders.isNotEmpty()) Persian.number(store.senders.size) + " فرستندهٔ مجاز" else "حداقل یک شماره یا شناسه را وارد کنید.",
                     badge = if (store.senders.isNotEmpty()) "آماده" else "افزودن",
                     onClick = { nav.home("senders") },
                 )
@@ -271,9 +270,9 @@ internal fun SmsPermissionScreen() {
     Hero("اجازهٔ دریافت پیامک", "برای ارسال خودکار پیامک‌های تازهٔ فرستنده‌های مجاز لازم است.", Tone.info, Art.Permissions)
     AppCard(title = "قبل از دادن اجازه") {
         Rows(
-            { ListRow(Ico.Bank, Tone.muted, "فهرست مجاز", "انتخاب هر فرستنده با شماست؛ تا انتخاب نکنید چیزی ارسال نمی‌شود.") },
+            { ListRow(Ico.Bank, Tone.muted, "فهرست مجاز", "هر شماره را خودتان وارد می‌کنید؛ تا وارد نکنید چیزی ارسال نمی‌شود.") },
             { ListRow(Ico.Shield, Tone.muted, "حفاظت از رمزها", "پیامک‌هایی که شبیه رمز یکبار مصرف یا کد تأیید باشند ارسال نمی‌شوند.") },
-            { ListRow(Ico.Inbox, Tone.muted, "خواندن صندوق پیامک", "اجازه‌ای جدا؛ فقط برای انتخاب فرستنده و بازیابی، و اختیاری است.") },
+            { ListRow(Ico.Inbox, Tone.muted, "صندوق پیامک خوانده نمی‌شود", "فقط پیامک‌های تازه شنیده می‌شوند؛ پیامک‌های قبلی گوشی دست‌نخورده می‌مانند.") },
         )
     }
     if (refused) {
@@ -318,7 +317,7 @@ internal fun SetupDoneScreen(store: Store) {
     val ok = smsGranted(context)
     Hero(
         if (ok) "اجازهٔ پیامک آماده است" else "اجازهٔ پیامک هنوز داده نشده",
-        if (store.senders.isEmpty()) "برای شروع ارسال، حالا فرستندهٔ بانک را انتخاب کنید." else "فرستنده‌های مجاز آماده‌اند.",
+        if (store.senders.isEmpty()) "برای شروع ارسال، حالا شمارهٔ بانک را وارد کنید." else "فرستنده‌های مجاز آماده‌اند.",
         if (ok) Tone.good else Tone.warn, Art.SetupComplete,
     )
     AppCard(title = "قدم آخر") {
@@ -327,13 +326,13 @@ internal fun SetupDoneScreen(store: Store) {
             {
                 ListRow(
                     Ico.Bank, if (store.senders.isEmpty()) Tone.warn else Tone.good, "فرستنده‌های مجاز",
-                    if (store.senders.isEmpty()) "هنوز فرستنده‌ای انتخاب نشده است." else Persian.number(store.senders.size) + " فرستنده",
+                    if (store.senders.isEmpty()) "هنوز شماره‌ای وارد نشده است." else Persian.number(store.senders.size) + " فرستنده",
                     badge = if (store.senders.isEmpty()) "صفر" else Persian.number(store.senders.size),
                 )
             },
         )
     }
-    if (store.senders.isEmpty()) PrimaryButton("انتخاب فرستندهٔ بانک", { nav.home("senders") }) else PrimaryButton("بازگشت به خانه", { nav.home() })
+    if (store.senders.isEmpty()) PrimaryButton("افزودن شمارهٔ بانک", { nav.home("senders") }, icon = Ico.Plus) else PrimaryButton("بازگشت به خانه", { nav.home() })
 }
 
 /** POST_NOTIFICATIONS refused (55): two separate permissions, and refusing this one does not stop the SMS. */
@@ -368,8 +367,13 @@ internal fun NotifyDeniedScreen() {
     Notice("دریافت پیامک و اعلان دو دسترسی متفاوت هستند.", "بدون اجازهٔ اعلان هم پیامک‌های بانک دریافت و فرستاده می‌شوند؛ فقط اعلان‌ها دیده نمی‌شوند.", Tone.info)
 }
 
-// ── the seller's own list of bank numbers (states 09–12, 60, 67–70) ─────
+// ── the seller's own list of bank numbers (states 09, 11, 12, 60, 67) ──
 
+/**
+ * The allowed senders: the list, a delete on each one, and one way to add — the seller types the
+ * number. The app never reads the inbox (no READ_SMS); a bank-looking sender the receiver heard is
+ * offered under «پیشنهاد», its number only.
+ */
 @Composable
 internal fun SendersScreen(store: Store) {
     watchStore()
@@ -381,11 +385,10 @@ internal fun SendersScreen(store: Store) {
 
     ScreenHeader(if (senders.isEmpty()) "شماره‌های بانک" else "شماره‌های مجاز", "خانه") { nav.home() }
     if (senders.isEmpty()) {
-        Hero("بانک خود را معرفی کنید", "فقط پیامک شماره‌های بانکی که شما انتخاب می‌کنید ارسال می‌شوند.", Tone.info, icon = Ico.Bank)
-        EmptyState("هنوز شمارهٔ بانکی ندارید", "برای شروع، یک فرستندهٔ بانکی اضافه کنید.", Art.Bank)
-        PrimaryButton("پیدا کردن خودکار شمارهٔ بانک", { nav.home("pick") }, icon = Ico.Search)
-        SecondaryButton("نوشتن شماره به‌صورت دستی", { nav.home("manual") })
-        Notice("هیچ پیامکی بدون مجوز شما از گوشی خارج نمی‌شود.", null, Tone.good)
+        Hero("بانک خود را معرفی کنید", "فقط پیامک شماره‌های بانکی که شما وارد می‌کنید ارسال می‌شوند.", Tone.info, icon = Ico.Bank)
+        EmptyState("هنوز شمارهٔ بانکی ندارید", "شمارهٔ فرستندهٔ پیامک بانک را از برنامهٔ پیامک گوشی ببینید و همین‌جا بنویسید.", Art.Bank)
+        PrimaryButton("افزودن شمارهٔ بانک", { nav.home("manual") }, icon = Ico.Plus)
+        Notice("هیچ پیامکی بدون مجوز شما از گوشی خارج نمی‌شود.", "برنامه صندوق پیامک گوشی را نمی‌خواند؛ فقط پیامک‌های تازهٔ شماره‌هایی که وارد کرده‌اید فرستاده می‌شوند.", Tone.good)
     } else {
         Hero(Persian.number(senders.size) + " فرستنده مجاز است", "ارسال پیامک تنها از همین فرستنده‌ها انجام می‌شود.", Tone.good, icon = Ico.Bank)
         AppCard(title = "شماره‌های مجاز") {
@@ -394,10 +397,7 @@ internal fun SendersScreen(store: Store) {
                 ListRow(Ico.Bank, Tone.good, Persian.sender(s), "برای حذف بزنید", badge = "مجاز", onClick = { removing = s })
             }
         }
-        AppCard(title = "افزودن شماره") {
-            PrimaryButton("انتخاب از پیامک‌ها", { nav.home("pick") })
-            SecondaryButton("نوشتن شماره", { nav.home("manual") })
-        }
+        PrimaryButton("افزودن شماره", { nav.home("manual") }, icon = Ico.Plus)
         Notice("برای حذف یک شماره، تأیید مجدد لازم است.", null, Tone.info)
     }
     // Senders whose SMS looked like a bank's — offered, never added on their own.
@@ -420,17 +420,16 @@ internal fun SendersScreen(store: Store) {
         )
     }
     confirming?.let { s ->
-        ConfirmSenderDialog(store, s, null, onAdded = { confirming = null }, onDismiss = { confirming = null }, onIgnore = { store.dismissSuggestion(s); confirming = null })
+        ConfirmSenderDialog(store, s, onAdded = { confirming = null }, onDismiss = { confirming = null }, onIgnore = { store.dismissSuggestion(s); confirming = null })
     }
 }
 
 /**
  * «این فرستنده مجاز شود؟» (11): the FULL sender id, isolated left-to-right, and the shop it will go
- * to. The SMS's text stays hidden unless the seller asks to see it.
+ * to. No SMS text is shown: the app has none but what the receiver heard, and keeps none of it here.
  */
 @Composable
-private fun ConfirmSenderDialog(store: Store, sender: String, preview: String?, onAdded: () -> Unit, onDismiss: () -> Unit, onIgnore: (() -> Unit)? = null) {
-    var show by remember(sender) { mutableStateOf(false) }
+private fun ConfirmSenderDialog(store: Store, sender: String, onAdded: () -> Unit, onDismiss: () -> Unit, onIgnore: (() -> Unit)? = null) {
     ConfirmDialog(
         "این فرستنده مجاز شود؟",
         "پیامک‌های غیررمز از این فرستنده به «" + (store.shop ?: "فروشگاه") + "» ارسال می‌شوند. شناسهٔ فرستنده را بررسی کرده‌اید؟",
@@ -446,97 +445,22 @@ private fun ConfirmSenderDialog(store: Store, sender: String, preview: String?, 
                 Persian.sender(sender), style = Type.section.copy(textDirection = TextDirection.Ltr), color = Brand.Ink,
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Brand.Canvas).padding(12.dp),
             )
-            if (preview != null) {
-                if (show) Text(Persian.digits(preview), style = Type.supporting.copy(textDirection = TextDirection.ContentOrRtl), color = Brand.Muted)
-                else LinkButton("نمایش آخرین پیامک این فرستنده", { show = true }, icon = Ico.Eye)
-            }
             if (onIgnore != null) LinkButton("این پیشنهاد را نادیده بگیر", onIgnore, color = Brand.Muted)
         },
     )
 }
 
 /**
- * «انتخاب از پیامک‌ها» (10, 68–70): the phone's own SMS senders, bank-looking ones first. Asks for
- * READ_SMS the first time; nothing read here leaves the phone, and the texts stay hidden.
+ * «افزودن شمارهٔ بانک» (67): the sender id exactly as the bank's SMS shows it, typed by the seller —
+ * the only way a number is added — then the same confirmation.
  */
-@Composable
-internal fun PickSenderScreen(store: Store) {
-    val context = LocalContext.current
-    val nav = LocalNav.current
-    var granted by remember { mutableStateOf(granted(context, Manifest.permission.READ_SMS)) }
-    var asked by rememberSaveable { mutableStateOf(false) }
-    var senders by remember { mutableStateOf<List<Inbox.Sender>?>(null) }
-    var attempt by remember { mutableIntStateOf(0) }
-    var query by remember { mutableStateOf("") }
-    var confirming by remember { mutableStateOf<Inbox.Sender?>(null) }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it; asked = true }
-    // The commonest setup in one tap: exactly one sender looks like a bank — it is offered at once.
-    var offered by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(senders) {
-        val bankish = senders?.filter { it.bankish }.orEmpty()
-        if (!offered && bankish.size == 1) { offered = true; confirming = bankish.first() }
-    }
-    LaunchedEffect(granted, attempt) {
-        if (!granted) {
-            if (!asked) ask.launch(Manifest.permission.READ_SMS)
-        } else {
-            senders = null
-            senders = withContext(Dispatchers.IO) { Inbox.group(Inbox.read(context), store.senders) }
-        }
-    }
-
-    ScreenHeader("انتخاب از صندوق", "خانه") { nav.home() }
-    when {
-        !granted && asked -> {
-            Hero("انتخاب خودکار ممکن نیست", "اجازهٔ خواندن صندوق پیامک داده نشده است.", Tone.warn, Art.Permissions)
-            Notice("راه دستی همچنان باز است", "اجازهٔ دریافت پیامک تازه با خواندن صندوق متفاوت است؛ بدون این یکی هم ارسال کار می‌کند.", Tone.info)
-            PrimaryButton("فرستنده را دستی وارد می‌کنم", { nav.home("manual") })
-            SecondaryButton("تنظیمات اجازه‌ها", { openAppSettings(context) })
-        }
-        !granted || senders == null -> {
-            Hero("پیدا کردن فرستنده‌ها", "فهرست فقط روی همین گوشی ساخته می‌شود.", Tone.info, icon = Ico.Search)
-            Waiting("در حال خواندن صندوق پیامک…")
-            AppCard(title = "فرستنده‌ها") { repeat(2) { Skeleton(Modifier.fillMaxWidth(), height = 52) } }
-            SecondaryButton("افزودن دستی", { nav.home("manual") })
-        }
-        senders!!.isEmpty() -> {
-            EmptyState("شمارهٔ بانکی پیدا نشد", "سیم‌کارت بانک باید روی همین گوشی باشد. می‌توانید فرستنده را دستی وارد کنید.", Art.Bank)
-            PrimaryButton("افزودن دستی", { nav.home("manual") })
-            SecondaryButton("جست‌وجوی دوباره", { attempt++ })
-        }
-        else -> {
-            Hero("فرستندهٔ درست را انتخاب کنید", "این فهرست فقط روی گوشی شما ساخته می‌شود و به جایی فرستاده نمی‌شود.", Tone.info, icon = Ico.Search)
-            PlainField(query, { query = it }, "جست‌وجوی فرستنده", ltr = true)
-            val q = Rules.normalize(query)
-            val shown = senders!!.filter { q.isEmpty() || Rules.normalize(it.from).contains(q) }.take(40)
-            AppCard(title = "فرستنده‌های پیدا‌شده") {
-                if (shown.isEmpty()) Text("فرستنده‌ای با این شناسه نیست.", style = Type.supporting, color = Brand.Muted)
-                shown.forEachIndexed { i, s ->
-                    if (i > 0) Divider()
-                    ListRow(
-                        Ico.Bank, if (s.bankish) Tone.good else Tone.muted, Persian.sender(s.from),
-                        Persian.number(s.count) + " پیامک · آخرین: " + Persian.day(s.lastAt) + (if (s.bankish) " · شبیه پیامک بانک" else ""),
-                        badge = "انتخاب", badgeTone = Tone.info, onClick = { confirming = s },
-                    )
-                }
-            }
-            Notice("شناسهٔ فرستنده را کامل بررسی کنید", "متن پیامک‌ها به‌صورت پیش‌فرض پنهان است؛ پیامک رمز هرگز نمایش داده نمی‌شود.", Tone.info)
-            SecondaryButton("افزودن دستی", { nav.home("manual") })
-        }
-    }
-    confirming?.let { s ->
-        ConfirmSenderDialog(store, s.from, s.preview, onAdded = { confirming = null; nav.home("senders") }, onDismiss = { confirming = null })
-    }
-}
-
-/** «نوشتن شماره» (67): the sender id exactly as the bank's SMS shows it — then the same confirmation. */
 @Composable
 internal fun ManualSenderScreen(store: Store) {
     val nav = LocalNav.current
     var value by rememberSaveable { mutableStateOf("") }
     var confirming by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    ScreenHeader("افزودن دستی فرستنده", "خانه") { nav.home() }
+    ScreenHeader("افزودن شمارهٔ بانک", "شماره‌های بانک") { nav.home("senders") }
     Hero("شماره یا شناسهٔ بانک", "نام نمایشی کافی نیست؛ شناسه را دقیقاً از پیامک بانک بردارید.", Tone.info, Art.Bank)
     AppCard(title = "فرستندهٔ تازه") {
         PlainField(value, { value = it; error = null }, "شماره یا شناسهٔ پیامک", ltr = true, isError = error != null)
@@ -550,9 +474,17 @@ internal fun ManualSenderScreen(store: Store) {
                 else -> confirming = v
             }
         }, enabled = value.isNotBlank())
+        SecondaryButton("انصراف", { nav.home("senders") })
+    }
+    AppCard(title = "شماره را از کجا پیدا کنم؟") {
+        Steps(listOf(
+            "برنامهٔ پیامک گوشی را باز کنید و یک پیامک واریز یا برداشت بانک را پیدا کنید.",
+            "شماره یا نامی که بالای آن گفتگو نوشته شده، همان شناسهٔ فرستنده است.",
+            "همان را بی‌کم‌وکاست در کادر بالا بنویسید.",
+        ))
     }
     confirming?.let { s ->
-        ConfirmSenderDialog(store, s, null, onAdded = { confirming = null; nav.home("senders") }, onDismiss = { confirming = null })
+        ConfirmSenderDialog(store, s, onAdded = { confirming = null; value = ""; nav.home("senders") }, onDismiss = { confirming = null })
     }
 }
 

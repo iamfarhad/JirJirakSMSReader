@@ -47,7 +47,6 @@ fun MoreTab(store: Store, now: Long, route: String) {
     watchStore()
     when (route) {
         "security" -> SecurityScreen(store)
-        "recovery" -> RecoveryScreen(store, now)
         "notify" -> NotificationsScreen(store)
         "formats" -> FormatsScreen(store)
         "update" -> UpdateScreen(store, now)
@@ -94,7 +93,6 @@ private fun MoreHub(store: Store, now: Long) {
     AppCard(title = "تنظیمات") {
         Rows(
             { ListRow(Ico.Shield, Tone.muted, "امنیت و دسترسی‌ها", "کد اتصال و کد مدیریت، جدا از هم", onClick = { nav.more("security") }) },
-            { ListRow(Ico.Refresh, Tone.muted, "بازیابی پیامک‌های جامانده", if (store.recoveryOn) "روشن" else "اختیاری · خاموش", onClick = { nav.more("recovery") }) },
             { ListRow(Ico.Bell, Tone.muted, "اعلان‌ها", "رسید منتظر، مغایرت، سکوت شبانه", onClick = { nav.more("notify") }) },
             { ListRow(Ico.Sun, Tone.muted, "ظاهر و ویجت", "روشن، تاریک، مانند گوشی", onClick = { nav.more("appearance") }) },
             { ListRow(Ico.Sync, if (latest != null) Tone.good else Tone.muted, "به‌روزرسانی", latest?.let { "نسخهٔ " + Persian.sender(it.version) + " آماده است" } ?: "آخرین نسخهٔ برنامه", badge = latest?.let { "جدید" }, onClick = { nav.more("update") }) },

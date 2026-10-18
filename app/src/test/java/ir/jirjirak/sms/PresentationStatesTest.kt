@@ -74,14 +74,6 @@ class PresentationStatesTest {
         assertEquals(States.QueueRow.THROTTLED, States.queueRow("retry", "فرستاده نشد: ربات گفت آهسته‌تر (محدودیت تعداد درخواست) — دوباره تلاش می‌شود"))
     }
 
-    @Test fun `recovery says queued, never sent`() {
-        val text = States.recoveryResult(3)
-        assertTrue(text.contains("۳"))
-        assertTrue(text.contains("صف"))
-        assertFalse(text.contains("فرستاده شد"))
-        assertFalse(text.contains("ارسال شد"))
-    }
-
     @Test fun `the unpair warning names the real queue and that it is deleted`() {
         val text = States.unpairText(4)
         assertTrue(text.contains("۴ پیامک"))
@@ -132,7 +124,7 @@ class PresentationStatesTest {
 
     // ── health: a test that did not run is not a healthy result ──
 
-    private val local = HealthCheck.Local(paired = true, smsPermission = true, batteryFree = true, senders = 1, queued = 0, recoveryOn = true, readSms = true)
+    private val local = HealthCheck.Local(paired = true, smsPermission = true, batteryFree = true, senders = 1, queued = 0)
 
     @Test fun `an old bot without a dry run gives a partial result, not a healthy one`() {
         val steps = HealthCheck.steps(local, HealthCheck.Remote(200, null, null), sampleIsReal = false)

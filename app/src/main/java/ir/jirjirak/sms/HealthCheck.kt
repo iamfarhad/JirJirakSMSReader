@@ -30,8 +30,6 @@ object HealthCheck {
         val batteryFree: Boolean,
         val senders: Int,
         val queued: Int,
-        val recoveryOn: Boolean,
-        val readSms: Boolean,
     )
 
     /** The bot's answer: null when it could not be reached; [code] is the HTTP status. */
@@ -51,11 +49,6 @@ object HealthCheck {
         out += when {
             local.queued == 0 -> Step("صف گوشی", State.OK, "پیامکی منتظر ارسال نیست.")
             else -> Step("صف گوشی", State.WARN, ir.jirjirak.sms.ui.Persian.number(local.queued) + " پیامک منتظر اینترنت است.")
-        }
-        out += when {
-            local.recoveryOn && local.readSms -> Step("بازیابی پیامک‌های جامانده", State.OK, "پیامکی که در نبودِ برنامه برسد، از صندوق پیامک پیدا و فرستاده می‌شود.")
-            local.recoveryOn -> Step("بازیابی پیامک‌های جامانده", State.WARN, "روشن است ولی اجازهٔ خواندن پیامک داده نشده.")
-            else -> Step("بازیابی پیامک‌های جامانده", State.INFO, "خاموش است. اگر گوشی گاهی برنامه را می‌بندد، از «بیشتر» روشنش کنید.")
         }
         if (!local.paired) {
             out += Step("اتصال به ربات", State.BAD, "گوشی به فروشگاهی وصل نیست.")
@@ -143,8 +136,6 @@ object HealthCheck {
             batteryFree = context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) ?: true,
             senders = store.senders.size,
             queued = store.queueSize(),
-            recoveryOn = store.recoveryOn,
-            readSms = Recovery.permitted(context),
         )
         val endpoint = store.endpoint ?: return steps(local, null, false)
         val ping = Net.ping(context, endpoint)

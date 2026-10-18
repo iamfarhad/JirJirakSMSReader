@@ -92,13 +92,6 @@ object States {
         else -> QueueRow.QUEUED
     }
 
-    // ── recovery (90–92) ─────────────────────────────────────────────────
-
-    /** «found and queued» — never «sent»: whether the bot took them is the report's to say. */
-    fun recoveryResult(queued: Int): String =
-        if (queued > 0) Persian.number(queued) + " پیامک جامانده پیدا شد و به صف ارسال اضافه شد. نتیجهٔ ارسال هر کدام در «گزارش» می‌آید."
-        else "در بازهٔ مجاز، پیامک تازه‌ای برای افزودن به صف پیدا نشد."
-
     // ── the unpair warning (49) ──────────────────────────────────────────
 
     fun unpairText(queued: Int): String =

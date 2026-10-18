@@ -39,14 +39,11 @@
 | 08 setup-done | `home("setup_done")` | اجازه داده شد، فرستنده هنوز صفر |
 | 55 notify-denied | `home("notify_denied")` | POST_NOTIFICATIONS رد شده؛ ارسال پیامک مستقل است |
 | 09 senders-empty | `home("senders")` | `store.senders.isEmpty()` |
-| 10 senders-pick | `home("pick")` | `Inbox.group(...)` روی گوشی |
-| 11 senders-confirm | `ConfirmSenderDialog` | شناسهٔ کامل با BiDi ایزوله؛ متن فقط با درخواست |
-| 12 senders-active | `home("senders")` | `store.senders` |
+| 11 senders-confirm | `ConfirmSenderDialog` | شناسهٔ کامل با BiDi ایزوله؛ هیچ متن پیامکی نشان داده نمی‌شود |
+| 12 senders-active | `home("senders")`: فهرست + «افزودن شماره» (➕) + حذف هر شماره با لمس | `store.senders` |
 | 60 sender-remove | `ConfirmDialog` در `SendersScreen` | `store.removeSender` |
-| 67 sender-manual | `home("manual")` | `Rules.normalize` / `Rules.isAllowed` |
-| 68 inbox-loading | `home("pick")`، `senders == null` | خواندن صندوق |
-| 69 inbox-empty | `home("pick")`، فهرست خالی | — |
-| 70 read-denied | `home("pick")`، READ_SMS رد شده | — |
+| 67 sender-manual | `home("manual")` — تنها راه افزودن؛ «انصراف» به فهرست برمی‌گردد | `Rules.normalize` / `Rules.isAllowed` |
+| ~~10، 68–70~~ | حذف شد (2026-10-18): انتخاب فرستنده از صندوق پیامک و اجازهٔ READ_SMS دیگر وجود ندارد | — |
 | 13 home-active | `Dashboard` · `HomeHero.AUTO_ON` | `summary.autoOn == true` از `/receipts/summary` |
 | 14 home-no-key | `HomeHero.FORWARDING` + `Stats.NO_KEY` | `store.manageKey == null` |
 | 15 home-loading | `Stats.LOADING` | `SummaryCache.value == null` و بدون خطا |
@@ -115,7 +112,7 @@
 |---|---|---|
 | 42 more | `MoreHub` | `SummaryCache`، `Updates.available`، `shopInfo` |
 | 43 more-security / 93 manage-clear | `more("security")` | وجود کدها، نه خودشان |
-| 44 more-recovery / 56 recovery-denied / 90–92 | `more("recovery")` | `Recovery.scan`؛ نتیجه «در صف» است نه «ارسال شد» |
+| ~~44 / 56 / 90–92~~ | حذف شد: «بازیابی پیامک‌های جامانده» صندوق پیامک را می‌خواند؛ با رفتن READ_SMS رفت | — |
 | 45 more-notify | `more("notify")` | `store.notify*` |
 | (۱.۴) وب‌هوک‌های دیگر — فهرست | `more("hooks")`؛ تا `store.hooksOn` خاموش است، ردیف «بیشتر» فقط دیالوگ روشن کردن را باز می‌کند | `store.hooks`، `hookQueueSize()` |
 | (۱.۴) وب‌هوک — افزودن/ویرایش/خاموش/حذف | `more("hook:new")` / `more("hook:<id>")` | `Hooks.parseUrl`، `store.saveHook` / `deleteHook` |
@@ -138,7 +135,7 @@
 ## تست و Build
 
 ```bash
-./gradlew testDebugUnitTest                  # JVM: Rules، Recovery/Health، Receipts/Alerts، Report/Updates، SemVer/Inbox، PresentationStates
+./gradlew testDebugUnitTest                  # JVM: Rules، Fingerprint/Health، Receipts/Alerts، Report/Updates، SemVer، PresentationStates
 ./gradlew connectedDebugAndroidTest          # روی امولاتور/گوشی: جریان‌ها، RTL، fontScale 2، عرض ۳۲۰–۴۱۲dp، semantics
 ./gradlew assembleDebug
 ```

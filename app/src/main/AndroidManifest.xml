@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- RECEIVE: hears new SMS as they arrive (only allowed senders' leave the phone). -->
+    <!-- RECEIVE: hears new SMS as they arrive (only allowed senders' leave the phone). The only SMS
+         permission: the app never reads the inbox — the seller types the bank's number by hand. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <!-- READ: for «انتخاب از پیامک‌ها» (senders listed on screen, nothing sent) and, only when the
-         seller turns it on, «بازیابی پیامک‌های جامانده»: bank SMS from allowed senders that arrived
-         while the app could not hear them, from the moment it was turned on, never a password. -->
-    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Required by JobScheduler for a job that waits for a network; without it, scheduling throws. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

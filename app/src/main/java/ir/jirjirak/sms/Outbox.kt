@@ -18,8 +18,8 @@ import org.json.JSONObject
  * Plain SQLiteOpenHelper rather than Room: two tables, a handful of queries, and no annotation
  * processor to keep in step with the Kotlin compiler.
  *
- * `seen` is every SMS this phone has already queued, by fingerprint (Rules.fingerprint) — what lets
- * [Recovery] read the inbox again without sending anything twice. Kept a week.
+ * `seen` is every SMS this phone has already queued, by fingerprint (Rules.fingerprint) — what keeps
+ * an SMS Android delivers twice from being sent twice. Kept a week.
  *
  * `target` (version 2) is where a row goes: [Hooks.BOT] for the paired bot, a [Hook.id] for one of
  * the seller's webhooks. Each target is its own queue, so a webhook that is down never holds the
@@ -61,8 +61,8 @@ class Outbox private constructor(context: Context) : SQLiteOpenHelper(context, "
     }
 
     /**
-     * Queue one SMS. False when this exact SMS (by [fingerprint]) was queued before — the receiver
-     * and a recovery pass racing for the same message, or the inbox read twice.
+     * Queue one SMS. False when this exact SMS (by [fingerprint]) was queued before — the same
+     * broadcast delivered twice.
      */
     fun enqueue(item: JSONObject, fingerprint: String?, target: String = Hooks.BOT): Boolean {
         val db = writableDatabase

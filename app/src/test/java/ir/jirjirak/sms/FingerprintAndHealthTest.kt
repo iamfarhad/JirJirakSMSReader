@@ -10,19 +10,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Phases 2–4 on the phone, the pure halves: one SMS is one fingerprint however it arrived, recovery
- * sends only what was missed, the health test says what a seller must fix, a count is told once,
+ * Phases 2–4 on the phone, the pure halves: one SMS is one fingerprint however it is written, the
+ * health test says what a seller must fix (and never mentions the inbox), a count is told once,
  * secrets are sealed, and the bot's reconciliation and format answers are read as written.
  */
-class RecoveryAndHealthTest {
+class FingerprintAndHealthTest {
 
     // ── one SMS, one fingerprint ────────────────────────────────────────
 
     @Test
-    fun `the receiver and the inbox call one SMS the same thing`() {
+    fun `one SMS delivered twice, written two ways, is one fingerprint`() {
         val body = "واریز 1,000,000 ریال مانده 9,000,000"
         val stamp = 1_792_058_814_123L
-        // The receiver hears «+98999»; the inbox wrote «98999»; Persian digits in one copy.
+        // One delivery says «+98999», the other «98999»; Persian digits in one copy.
         assertEquals(Rules.fingerprint("+98999", body, stamp), Rules.fingerprint("98999", body, stamp))
         assertEquals(Rules.fingerprint("09999", body, stamp), Rules.fingerprint("09999", "واریز ۱,۰۰۰,۰۰۰ ریال مانده ۹,۰۰۰,۰۰۰", stamp))
         assertEquals("milliseconds do not matter", Rules.fingerprint("9999", body, stamp), Rules.fingerprint("9999", body, stamp + 500))
@@ -36,38 +36,9 @@ class RecoveryAndHealthTest {
         assertNotEquals(Rules.fingerprint("9999", body, 1L), Rules.fingerprint("8888", body, 1L))
     }
 
-    // ── recovery picks only what was missed ─────────────────────────────
-
-    private fun sms(from: String, body: String, date: Long) = Recovery.Sms(from, body, date, date - 2000)
-
-    @Test
-    fun `recovery sends an allowed bank sms the phone missed, oldest first`() {
-        val inbox = listOf(
-            sms("9999", "واریز 2,000", 3_000),
-            sms("9999", "واریز 1,000", 2_000),
-            sms("5555", "واریز 9,000", 2_500),               // not an allowed sender
-            sms("9999", "رمز پویا: 123456", 2_600),          // a password, from the bank itself
-            sms("9999", "واریز 7,000", 500),                  // before the opt-in moment
-        )
-        val picked = Recovery.pick(inbox, listOf("9999"), since = 1_000) { false }
-
-        assertEquals(listOf("واریز 1,000", "واریز 2,000"), picked.map { it.first.body })
-    }
-
-    @Test
-    fun `recovery skips what the phone already handled and a duplicate row`() {
-        val a = sms("9999", "واریز 1,000", 2_000)
-        val handled = Rules.fingerprint(a.from, a.body, a.dateSent)
-        val b = sms("9999", "واریز 2,000", 3_000)
-
-        val picked = Recovery.pick(listOf(a, b, b.copy()), listOf("9999"), since = 0) { it == handled }
-
-        assertEquals(listOf(b.body), picked.map { it.first.body })
-    }
-
     // ── the health test ─────────────────────────────────────────────────
 
-    private val healthy = HealthCheck.Local(paired = true, smsPermission = true, batteryFree = true, senders = 1, queued = 0, recoveryOn = true, readSms = true)
+    private val healthy = HealthCheck.Local(paired = true, smsPermission = true, batteryFree = true, senders = 1, queued = 0)
 
     @Test
     fun `a clean run says every step is fine`() {
@@ -111,16 +82,6 @@ class RecoveryAndHealthTest {
         assertFalse("an older bot would store the sample as money", HealthCheck.shouldDryRun(JSONObject("""{"shop":"x"}""")))
         assertFalse(HealthCheck.shouldDryRun(JSONObject("""{"features":["devices"]}""")))
         assertFalse(HealthCheck.shouldDryRun(JSONObject()))
-    }
-
-    @Test
-    fun `without an sms-centre stamp, what the log holds is not recovered again`() {
-        // date_sent 0: the receiver's fingerprint and the inbox's differ, the event log is the check.
-        val sent = Recovery.Sms("9999", "واریز 1,000", 2_000, 0)
-        val missed = Recovery.Sms("9999", "واریز 2,000", 3_000, 0)
-        val logged = setOf(Recovery.logKey("9999", "واریز 1,000"))
-
-        assertEquals(listOf(missed.body), Recovery.pick(listOf(sent, missed), listOf("9999"), 0, logged) { false }.map { it.first.body })
     }
 
     @Test
@@ -232,5 +193,11 @@ class RecoveryAndHealthTest {
         assertArrayEquals(booleanArrayOf(true, false), s.devices.map { it.mine }.toBooleanArray())
         assertTrue(s.devices[1].quiet)
         assertEquals(1792058000000L, s.devices[0].at)
+    }
+
+    @Test
+    fun `the health test has no inbox step, the app never reads the inbox`() {
+        val steps = HealthCheck.steps(healthy, null, false)
+        assertTrue(steps.none { it.title.contains("بازیابی") || it.detail.contains("صندوق") })
     }
 }
