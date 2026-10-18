@@ -9,8 +9,8 @@ import android.content.Context
 
 /**
  * The background half: every 15 minutes (Android's shortest period), and once whenever a send
- * failed, deliver what is queued and ping the bot. Both wait for a network, so a phone with no
- * internet costs nothing until it has some.
+ * failed, deliver what is queued — and ping the bot when the beat has not (Beat.pingDue). Both wait
+ * for a network, so a phone with no internet costs nothing until it has some.
  */
 class SyncJob : JobService() {
 
@@ -18,7 +18,9 @@ class SyncJob : JobService() {
         Thread {
             // Each step on its own: one throwing must not skip jobFinished and leave the job hanging.
             runCatching { Net.flush(this) }
-            runCatching { Net.ping(this) }
+            // The beat pings every 5 minutes; a second «I am here» from the job is one more wake of
+            // the radio and a TLS handshake for nothing. Only when the beat has gone quiet.
+            runCatching { if (Beat.pingDue(Store(this).lastPing)) Net.ping(this) }
             // The counts the seller asked to hear of.
             runCatching { Alerts.checkReview(this) }
             // The retry job asks to be run again (with its backoff) while anything is still queued;

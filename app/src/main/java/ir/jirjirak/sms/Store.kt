@@ -56,6 +56,14 @@ class Store(context: Context) {
 
     private val prefs: SharedPreferences = app.getSharedPreferences("jirjirak_sms", Context.MODE_PRIVATE)
 
+    /**
+     * The event log, in a file of its own. SharedPreferences rewrites its WHOLE file on every write:
+     * with the log inside, each ping's «last ping» stamp rewrote 200 events too — hundreds of
+     * kilobytes every 5 minutes, all day. Now a ping rewrites a few settings, and only an event
+     * rewrites the log.
+     */
+    private val log: SharedPreferences = app.getSharedPreferences("jirjirak_events", Context.MODE_PRIVATE)
+
     private fun commit(edit: SharedPreferences.Editor) {
         edit.apply()
         bump()
@@ -73,7 +81,8 @@ class Store(context: Context) {
 
     var shop: String?
         get() = prefs.getString("shop", null)
-        set(v) = commit(prefs.edit().putString("shop", v))
+        // Every ping says the shop's name; the same name again is no write (nor a redraw).
+        set(v) { if (v != shop) commit(prefs.edit().putString("shop", v)) }
 
     /** The bot's host, for the seller and for support: «bot.example.com». */
     val server: String?
@@ -82,7 +91,8 @@ class Store(context: Context) {
     /** What the bot said about the shop in its last ping reply (subscription, bot username…). */
     var shopInfo: JSONObject
         get() = runCatching { JSONObject(prefs.getString("shop_info", null) ?: "{}") }.getOrDefault(JSONObject())
-        set(v) = commit(prefs.edit().putString("shop_info", v.toString()))
+        // The bot answers every ping with the same reply until something about the shop changes.
+        set(v) { v.toString().let { s -> if (s != prefs.getString("shop_info", null)) commit(prefs.edit().putString("shop_info", s)) } }
 
     /** Does the paired bot understand this (its ping reply's `features`)? An older bot says nothing. */
     fun supports(feature: String): Boolean =
@@ -213,7 +223,8 @@ class Store(context: Context) {
     /** «revoked», «send», «ping» or null — the last thing that went wrong on the network. */
     var lastError: String?
         get() = prefs.getString("last_error", null)
-        set(v) = commit(prefs.edit().putString("last_error", v))
+        // Cleared on every good ping and every delivery: nothing to write when it already was.
+        set(v) { if (v != lastError) commit(prefs.edit().putString("last_error", v)) }
 
     /** Told once each (Alerts) until the battery recovers / the bot answers again. */
     var batteryWarned: Boolean
@@ -320,16 +331,16 @@ class Store(context: Context) {
      * seller's own phone), verdict (the bot's word on an SMS).
      */
     fun events(): List<JSONObject> {
-        if (prefs.contains("log")) migrateLog()
-        val raw = prefs.getString("events", null) ?: return emptyList()
+        if (prefs.contains("events") || prefs.contains("log")) moveLog()
+        val raw = log.getString("events", null) ?: return emptyList()
         eventsCache?.let { (at, rows) -> if (at === raw) return rows }
         return parseEvents(raw).also { eventsCache = raw to it }
     }
 
     /** New objects every call — for the writers, which change rows and must not touch the cached ones. */
     private fun freshEvents(): List<JSONObject> {
-        if (prefs.contains("log")) migrateLog()
-        return parseEvents(prefs.getString("events", null))
+        if (prefs.contains("events") || prefs.contains("log")) moveLog()
+        return parseEvents(log.getString("events", null))
     }
 
     private fun parseEvents(raw: String?): List<JSONObject> =
@@ -346,7 +357,7 @@ class Store(context: Context) {
             if (from != null) row.put("from", from)
             if (body != null) row.put("body", body.take(400))
             val items = listOf(row) + freshEvents()
-            commit(prefs.edit().putString("events", JSONArray(items.take(EVENTS_MAX)).toString()))
+            commit(log.edit().putString("events", JSONArray(items.take(EVENTS_MAX)).toString()))
         }
         return id
     }
@@ -363,10 +374,13 @@ class Store(context: Context) {
             }
             it
         }
-        if (found) commit(prefs.edit().putString("events", JSONArray(items).toString()))
+        if (found) commit(log.edit().putString("events", JSONArray(items).toString()))
     }
 
-    fun clearEvents() = synchronized(LOCK) { commit(prefs.edit().remove("events").remove("log")) }
+    fun clearEvents() = synchronized(LOCK) {
+        prefs.edit().remove("events").remove("log").apply()
+        commit(log.edit().remove("events"))
+    }
 
     /** Forwarded today, by the phone's clock. */
     fun sentToday(now: Long = System.currentTimeMillis()): Int {
@@ -377,23 +391,28 @@ class Store(context: Context) {
         return events().count { it.optString("kind") == "sms" && it.optString("status") == "sent" && it.optLong("at") >= midnight }
     }
 
-    /** The 1.0 «log» (deliveries only) becomes the oldest rows of the event log, once. */
-    private fun migrateLog(): JSONArray {
-        val events = array("events")
-        val old = prefs.getString("log", null) ?: return events
-        synchronized(LOCK) {
-            val rows = runCatching { JSONArray(old) }.getOrDefault(JSONArray())
-            for (i in 0 until rows.length()) {
-                val r = rows.optJSONObject(i) ?: continue
-                events.put(
-                    JSONObject().put("id", r.optString("id")).put("at", r.optLong("at")).put("kind", "sms")
-                        .put("status", if (r.optBoolean("ok")) "sent" else "queued").put("from", r.optString("from"))
-                        .put("title", "پیامک بانک"),
-                )
+    /**
+     * The log's earlier homes, moved into its own file once: the «events» of 1.1–1.4.4 from the
+     * settings file, then the 1.0 «log» (deliveries only) as the oldest rows. Rows already in the new
+     * file (a move cut short) stay first, and a row is never kept twice.
+     */
+    private fun moveLog() = synchronized(LOCK) {
+        if (!prefs.contains("events") && !prefs.contains("log")) return@synchronized
+        val legacy = runCatching { JSONArray(prefs.getString("log", null) ?: "[]") }.getOrDefault(JSONArray()).let { rows ->
+            (0 until rows.length()).mapNotNull { i ->
+                val r = rows.optJSONObject(i) ?: return@mapNotNull null
+                JSONObject().put("id", r.optString("id")).put("at", r.optLong("at")).put("kind", "sms")
+                    .put("status", if (r.optBoolean("ok")) "sent" else "queued").put("from", r.optString("from"))
+                    .put("title", "پیامک بانک")
             }
-            commit(prefs.edit().remove("log").putString("events", events.toString()))
         }
-        return events
+        val ids = HashSet<String>()
+        val rows = (parseEvents(log.getString("events", null)) + parseEvents(prefs.getString("events", null)) + legacy)
+            .filter { it.optString("id").let { id -> id.isEmpty() || ids.add(id) } }
+            .take(EVENTS_MAX)
+        // On disk before the old copies go: a kill in between leaves both, and the next read merges again.
+        log.edit().putString("events", JSONArray(rows).toString()).commit()
+        commit(prefs.edit().remove("events").remove("log"))
     }
 
     // ── the queue: SMS waiting for a connection ─────────────────────────

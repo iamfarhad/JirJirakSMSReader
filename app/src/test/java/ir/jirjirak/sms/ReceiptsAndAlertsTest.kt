@@ -167,4 +167,15 @@ class ReceiptsAndAlertsTest {
         assertFalse("already decided when opened", ir.jirjirak.sms.ui.States.decidedElsewhere("approved", "approved", false))
         assertFalse("first read", ir.jirjirak.sms.ui.States.decidedElsewhere(null, "approved", false))
     }
+
+    @Test
+    fun `the job pings only when the beat has gone quiet`() {
+        val now = 1_792_058_814_000L
+        assertFalse("the beat pinged a minute ago", Beat.pingDue(now - 60_000, now))
+        assertFalse("Doze spaces the beat ~9 minutes", Beat.pingDue(now - 9 * 60_000, now))
+        assertTrue("two beats missed", Beat.pingDue(now - 10 * 60_000, now))
+        assertTrue("never pinged", Beat.pingDue(0, now))
+        // The worst gap the job leaves (10 + its 15) stays under the bot's quiet threshold.
+        assertTrue(10 * 60_000 + 15 * 60_000 < Alerts.OFFLINE_MS)
+    }
 }

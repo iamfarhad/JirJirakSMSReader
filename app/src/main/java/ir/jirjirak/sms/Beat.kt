@@ -36,6 +36,13 @@ class Beat : BroadcastReceiver() {
     companion object {
         private const val EVERY_MS = 5 * 60 * 1000L
 
+        /**
+         * Should a job ping too? Not while the beat is answering: two beats' worth of quiet (Doze
+         * spaces the alarm ~9 minutes apart) means it is not. A job pinging then leaves at most
+         * 10 + 15 minutes between pings — inside the bot's 40-minute quiet threshold. Pure.
+         */
+        fun pingDue(lastPing: Long, now: Long = System.currentTimeMillis()): Boolean = now - lastPing >= 2 * EVERY_MS
+
         fun schedule(context: Context) {
             val alarms = context.getSystemService(AlarmManager::class.java) ?: return
             runCatching {
