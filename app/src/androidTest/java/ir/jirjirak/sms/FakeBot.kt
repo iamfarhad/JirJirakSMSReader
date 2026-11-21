@@ -17,7 +17,7 @@ import kotlin.concurrent.thread
  */
 class FakeBot(var handler: (method: String, path: String, body: String) -> Pair<Int, String>?) {
 
-    data class Request(val method: String, val path: String, val body: String, val contentType: String = "")
+    data class Request(val method: String, val path: String, val body: String)
 
     val requests = CopyOnWriteArrayList<Request>()
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
@@ -38,12 +38,10 @@ class FakeBot(var handler: (method: String, path: String, body: String) -> Pair<
         val first = input.readLine() ?: return
         val (method, rawPath) = first.split(" ").let { it[0] to it[1] }
         var length = 0
-        var type = ""
         while (true) {
             val line = input.readLine() ?: break
             if (line.isEmpty()) break
             if (line.lowercase().startsWith("content-length:")) length = line.substringAfter(':').trim().toInt()
-            if (line.lowercase().startsWith("content-type:")) type = line.substringAfter(':').trim()
         }
         // Content-Length counts bytes; the reader counts chars — read until the bytes are covered.
         val sb = StringBuilder()
@@ -56,7 +54,7 @@ class FakeBot(var handler: (method: String, path: String, body: String) -> Pair<
         }
         val body = sb.toString()
         val path = rawPath.removePrefix("/api/bank-sms/$SECRET")
-        requests += Request(method, path, body, type)
+        requests += Request(method, path, body)
         val reply = handler(method, path, body) ?: return
         val bytes = reply.second.toByteArray(Charsets.UTF_8)
         val out = s.getOutputStream()

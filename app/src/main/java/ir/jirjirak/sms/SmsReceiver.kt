@@ -8,9 +8,9 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * A new SMS arrived. Forwarded only if the seller allowed its sender — for the bot, or for one of
- * their webhooks — and it is not a password; otherwise, if it looks like a bank's, its SENDER (never
- * its text) is offered as a suggestion. The decision itself is [Forward.accept].
+ * A new SMS arrived. The bot receives it only if the seller allowed its sender and it contains no
+ * password. Other bank messages can suggest their sender without exposing their text.
+ * The decision itself is [Forward.accept].
  *
  * Every decision is written to the event log with its reason — a seller watching «nothing
  * happened» can see that the SMS did arrive and WHY it stayed on the phone.
@@ -57,14 +57,11 @@ class SmsReceiver : BroadcastReceiver() {
 object Forward {
 
     /**
-     * Queue [body] from [from] for the bot (an allowed sender) and for every switched-on webhook of
-     * that sender; log why when it goes nowhere. True when anything was queued. [sentAt] is the SMS
-     * centre's stamp, what makes the fingerprint (Rules.fingerprint).
+     * Queue [body] from [from] for the bot or log why it stayed on the phone. True when queued.
+     * [sentAt] is the SMS centre's stamp used for the fingerprint (Rules.fingerprint).
      */
     fun accept(store: Store, from: String, body: String, sentAt: Long): Boolean {
-        val toBot = Rules.isAllowed(from, store.senders)
-        val toHooks = Hooks.matching(from, store.activeHooks)
-        if (!toBot && toHooks.isEmpty()) {
+        if (!Rules.isAllowed(from, store.senders)) {
             val bankish = Rules.looksLikeBank(body) && !Rules.isSecret(body)
             if (bankish) store.suggest(from)
             // Only bank-looking SMS are logged: the seller's private messages are none of the
@@ -80,34 +77,23 @@ object Forward {
             return false
         }
         val fingerprint = Rules.fingerprint(from, body, sentAt)
-        var queued = false
-        if (toBot) queued = queue(store, from, body, sentAt, fingerprint, null) or queued
-        for (hook in toHooks) queued = queue(store, from, body, sentAt, Hooks.seenKey(fingerprint, hook.id), hook) or queued
-        return queued
-    }
-
-    /** One row for the bot ([hook] null) or for one webhook, and its line in the event log. */
-    fun queue(store: Store, from: String, body: String, sentAt: Long, seenKey: String, hook: Hook?, receivedAt: Long = System.currentTimeMillis()): Boolean {
         val id = UUID.randomUUID().toString()
         val item = JSONObject()
             .put("id", id)
             .put("message", body)
             .put("from", from)
-            .put("received_at", receivedAt / 1000)
+            .put("received_at", System.currentTimeMillis() / 1000)
             .put("sent_at", sentAt)
             .put("source", "jirjirak-sms/" + BuildConfig.VERSION_NAME)
-        val fresh = runCatching { store.enqueue(item, seenKey, hook?.id ?: Hooks.BOT) }.getOrElse {
+        val fresh = runCatching { store.enqueue(item, fingerprint) }.getOrElse {
             // A full disk or a broken database: the SMS is still in the phone's inbox, and the log
             // says why it did not go — the seller frees space and confirms that deposit in the bot.
-            store.event(if (hook == null) "sms" else "hook", "failed", "پیامک بانک ذخیره نشد", "حافظهٔ گوشی پر است یا خطای پایگاه‌داده؛ پیامک در صندوق گوشی هست.", from, body)
+            store.event("sms", "failed", "پیامک بانک ذخیره نشد", "حافظهٔ گوشی پر است یا خطای پایگاه‌داده؛ پیامک در صندوق گوشی هست.", from, body)
             return false
         }
         // This very SMS was delivered before (a broadcast repeated): already on its way.
         if (!fresh) return false
-        when {
-            hook != null -> store.event("hook", "queued", "وب‌هوک · " + hook.host, "در صف ارسال", from, body, id)
-            else -> store.event("sms", "queued", "پیامک بانک", "در صف ارسال به ربات", from, body, id)
-        }
+        store.event("sms", "queued", "پیامک بانک", "در صف ارسال به ربات", from, body, id)
         return true
     }
 }

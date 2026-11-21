@@ -20,12 +20,8 @@ import org.json.JSONObject
  *
  * `seen` is every SMS this phone has already queued, by fingerprint (Rules.fingerprint) — what keeps
  * an SMS Android delivers twice from being sent twice. Kept a week.
- *
- * `target` (version 2) is where a row goes: [Hooks.BOT] for the paired bot, a [Hook.id] for one of
- * the seller's webhooks. Each target is its own queue, so a webhook that is down never holds the
- * bot's SMS back, and the bot never holds a webhook's.
  */
-class Outbox private constructor(context: Context) : SQLiteOpenHelper(context, "outbox.db", null, 2) {
+class Outbox private constructor(context: Context) : SQLiteOpenHelper(context, "outbox.db", null, 3) {
 
     companion object {
         @Volatile private var instance: Outbox? = null
@@ -48,23 +44,37 @@ class Outbox private constructor(context: Context) : SQLiteOpenHelper(context, "
     val version: Int get() = writes.get()
 
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL(
-            "CREATE TABLE outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL, fingerprint TEXT, " +
-                "attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, target TEXT NOT NULL DEFAULT 'bot')",
-        )
+        createQueue(db)
         db.execSQL("CREATE TABLE seen (fingerprint TEXT PRIMARY KEY, at INTEGER NOT NULL)")
     }
 
-    /** 1 → 2: every row queued before webhooks existed was for the bot — the column's default says so. */
+    private fun createQueue(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL, fingerprint TEXT, " +
+                "attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)",
+        )
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 2) db.execSQL("ALTER TABLE outbox ADD COLUMN target TEXT NOT NULL DEFAULT 'bot'")
+        // Version 1 already used the bot-only schema. Version 2 separated queues by destination.
+        if (oldVersion != 2) return
+        db.execSQL("ALTER TABLE outbox RENAME TO outbox_v2")
+        createQueue(db)
+        db.execSQL(
+            "INSERT INTO outbox (id, body, fingerprint, attempts, created_at) " +
+                "SELECT id, body, fingerprint, attempts, created_at FROM outbox_v2 WHERE target = 'bot' ORDER BY rowid",
+        )
+        db.execSQL("DROP TABLE outbox_v2")
+        // External destinations reserved separate keys in the form fingerprint#destination.
+        db.execSQL("DELETE FROM seen WHERE instr(fingerprint, '#') > 0")
+        writes.incrementAndGet()
     }
 
     /**
      * Queue one SMS. False when this exact SMS (by [fingerprint]) was queued before — the same
      * broadcast delivered twice.
      */
-    fun enqueue(item: JSONObject, fingerprint: String?, target: String = Hooks.BOT): Boolean {
+    fun enqueue(item: JSONObject, fingerprint: String?): Boolean {
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -81,7 +91,6 @@ class Outbox private constructor(context: Context) : SQLiteOpenHelper(context, "
                 put("body", item.toString())
                 put("fingerprint", fingerprint)
                 put("created_at", System.currentTimeMillis())
-                put("target", target)
             })
             db.setTransactionSuccessful()
             writes.incrementAndGet()
@@ -91,30 +100,17 @@ class Outbox private constructor(context: Context) : SQLiteOpenHelper(context, "
         }
     }
 
-    /** One target's rows, oldest first — the order they arrived, the order they are sent. */
-    fun all(target: String = Hooks.BOT): List<JSONObject> =
-        readableDatabase.rawQuery("SELECT body FROM outbox WHERE target = ? ORDER BY created_at, rowid", arrayOf(target)).use { c ->
+    /** The queued messages, oldest first. */
+    fun all(): List<JSONObject> =
+        readableDatabase.rawQuery("SELECT body FROM outbox ORDER BY created_at, rowid", null).use { c ->
             val out = ArrayList<JSONObject>(c.count)
             while (c.moveToNext()) runCatching { JSONObject(c.getString(0)) }.getOrNull()?.let(out::add)
             out
         }
 
     /** What waits for the bot. */
-    fun size(): Int = count("SELECT COUNT(*) FROM outbox WHERE target = ?", arrayOf(Hooks.BOT))
-
-    /** What waits for the webhooks — one of them when [target] is given, all of them otherwise. */
-    fun hookSize(target: String? = null): Int =
-        if (target != null) count("SELECT COUNT(*) FROM outbox WHERE target = ?", arrayOf(target))
-        else count("SELECT COUNT(*) FROM outbox WHERE target != ?", arrayOf(Hooks.BOT))
-
-    private fun count(sql: String, args: Array<String>): Int =
-        readableDatabase.rawQuery(sql, args).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
-
-    /** A webhook deleted: what was waiting for it goes with it. */
-    fun clearTarget(target: String) {
-        writableDatabase.delete("outbox", "target = ?", arrayOf(target))
-        writes.incrementAndGet()
-    }
+    fun size(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM outbox", null).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
     fun remove(id: String) {
         writableDatabase.delete("outbox", "id = ?", arrayOf(id))

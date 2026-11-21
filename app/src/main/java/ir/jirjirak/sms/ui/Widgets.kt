@@ -50,9 +50,9 @@ object EventLook {
             kind == "sms" && status == "queued" -> Look(Ico.Clock, "warn", "در صف")
             kind == "sms" && status == "retry" -> Look(Ico.Refresh, "warn", "تلاش دوباره")
             kind == "sms" -> Look(Ico.Close, "bad", "ارسال نشد")
+            // Historical entries kept by installations that used external forwarding.
             kind == "hook" && status == "sent" -> Look(Ico.Check, "good", "به وب‌هوک رسید")
-            kind == "hook" && status == "queued" -> Look(Ico.Clock, "warn", "در صف")
-            kind == "hook" && status == "retry" -> Look(Ico.Refresh, "warn", "تلاش دوباره")
+            kind == "hook" && (status == "queued" || status == "retry") -> Look(Ico.Close, "muted", "ارسال بیرونی متوقف شد")
             kind == "hook" -> Look(Ico.Close, "bad", "ارسال نشد")
             kind == "ignored" && e.optString("title").contains("رمز") -> Look(Ico.Shield, "info", "روی گوشی ماند")
             kind == "ignored" -> Look(Ico.Close, "muted", "فرستاده نشد")

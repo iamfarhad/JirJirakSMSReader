@@ -138,10 +138,7 @@ fun App(resumed: Int, wantedTab: Int, wantedFilter: Int = 0, tabRequest: Int = 0
 
     // Back from a sub-screen goes to its tab's first screen, not out of the app.
     BackHandler(enabled = paired && nav.tab == MainActivity.TAB_HOME && nav.home != Nav.HOME_ROOT) { nav.home() }
-    // A webhook being edited goes back to the webhooks' list, the rest to «بیشتر».
-    BackHandler(enabled = paired && nav.tab == MainActivity.TAB_MORE && nav.more != Nav.MORE_ROOT) {
-        nav.more(if (nav.more.startsWith("hook:")) "hooks" else Nav.MORE_ROOT)
-    }
+    BackHandler(enabled = paired && nav.tab == MainActivity.TAB_MORE && nav.more != Nav.MORE_ROOT) { nav.more() }
 
     val atRoot = !paired || when (nav.tab) {
         MainActivity.TAB_HOME -> nav.home == Nav.HOME_ROOT
